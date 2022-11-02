@@ -1,12 +1,9 @@
 package main
 
 import (
-	"context"
+	"io"
 	"log"
 	"net"
-	"os"
-	"os/signal"
-	"sync"
 )
 
 // Deep inside Initrode Global's enterprise management framework lies a
@@ -31,43 +28,19 @@ import (
 // Your program will implement the TCP Echo Service from RFC 862.
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	var lc net.ListenConfig
-	listener, err := lc.Listen(ctx, "tcp", ":1337")
+	server, err := NewServer()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("listening on :1337")
 
-	go func() {
-		<-ctx.Done()
-		log.Println("shutting down")
-		listener.Close()
-	}()
-
-	var wg sync.WaitGroup
-	for {
-		conn, err := listener.Accept()
-		// Check if the listener closed.
-		if ctx.Err() != nil {
-			break
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		log.Println("accepted new connection")
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			echo(ctx, conn)
-			log.Println("closing connection")
-			if err := conn.Close(); err != nil {
-				log.Println(err)
-			}
-		}()
+	for conn := range server.Connections() {
+		server.Handle(conn, echo)
 	}
-	wg.Wait()
+	server.Wait()
+}
+
+func echo(conn net.Conn) {
+	if _, err := io.Copy(conn, conn); err != nil {
+		log.Println(err)
+	}
 }
