@@ -1,3 +1,4 @@
+use prime_time::{PrimeTime, PrimeTimeOutput};
 use std::io::{BufReader, BufWriter, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -14,41 +15,21 @@ fn main() {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct Request {
-    method: String,
-    number: f64,
-}
-
 fn prime(stream: TcpStream) {
     let mut reader = BufReader::new(&stream);
     let mut writer = BufWriter::new(&stream);
+
     let requests = serde_jsonlines::JsonLinesReader::new(&mut reader);
-
     for request in requests.read_all() {
-        let request: Request = request.unwrap();
-        // calculate isPrime
-        let response = Response {
-            method: "isPrime".to_string(),
-            prime: is_prime(request.number),
-        };
-        serde_json::to_writer(&mut writer, &response).unwrap();
-        writer.write_all(b"\n").unwrap();
-        writer.flush().unwrap();
+        match PrimeTime::try_from(request).map(PrimeTimeOutput::from) {
+            Ok(response) => {
+                let _ = serde_json::to_writer(&mut writer, &response);
+            }
+            Err(error) => {
+                let _ = serde_json::to_writer(&mut writer, &error);
+            }
+        }
+        let _ = writer.write_all(b"\n");
+        let _ = writer.flush();
     }
-}
-
-fn is_prime(num: f64) -> bool {
-    if num.fract() != 0. {
-        return false;
-    }
-
-    primes::is_prime(num as u64)
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-struct Response {
-    method: String,
-    #[serde(rename = "isPrime")]
-    prime: bool,
 }
