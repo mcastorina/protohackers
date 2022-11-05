@@ -13,7 +13,7 @@ type Request struct {
 type Response struct {
 	Method string  `json:"method"`
 	Number float64 `json:"number"`
-	Prime  bool    `json:"isPrime"`
+	Prime  bool    `json:"prime"`
 }
 
 func NewRequest(input []byte) (*Request, error) {
