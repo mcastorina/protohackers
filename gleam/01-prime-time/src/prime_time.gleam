@@ -15,6 +15,7 @@ import glisten/tcp
 import glisten
 
 pub fn main() {
+  // TODO: msgs are not sent on newline bounds
   handler.func(fn(msg, state) {
     prime(msg, state.socket)
     actor.Continue(state)
