@@ -29,15 +29,15 @@ fn mean(stream: TcpStream) -> Result<(), Box<dyn Error>> {
             .and_then(|_| buf.try_into())?;
         match request {
             Request::Insert { timestamp, price } => {
-                prices.push((timestamp, price));
+                prices.push((timestamp, price as i64));
             }
             Request::Query { time_range } => {
                 let prices: Vec<_> = prices
                     .iter()
-                    .filter_map(|(ts, price)| time_range.contains(ts).then_some(price))
-                    .copied()
+                    .filter_map(|(ts, price)| time_range.contains(ts).then_some(*price))
                     .collect();
-                let mean = i32::checked_div(prices.iter().sum(), prices.len() as i32).unwrap_or(0);
+                let mean: i32 =
+                    i64::checked_div(prices.iter().sum(), prices.len() as i64).unwrap_or(0) as i32;
                 let _ = writer.write(&mean.to_be_bytes());
                 let _ = writer.flush();
             }
