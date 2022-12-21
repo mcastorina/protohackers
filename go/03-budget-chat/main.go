@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"sync"
 )
 
@@ -20,7 +22,7 @@ func main() {
 
 	for conn := range server.Connections() {
 		server.Handle(conn, func(conn net.Conn) {
-			user := User{conn: conn}
+			user := NewUser(conn)
 
 			user.Send("Whatsyo name, delicate?")
 			user.name, _ = user.Receive()
@@ -31,22 +33,17 @@ func main() {
 			}
 
 			// start reading/writing incoming/outgoing messages
-			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
-				for {
-					s, err := user.Receive()
-					if err != nil {
-						break
-					}
-
-					fmt.Printf("TODO broadcast %s", s)
+			for {
+				msg, err := user.Receive()
+				if err != nil {
+					log.Println(err)
+					break
 				}
+				chat.Broadcast(user.name, msg)
+			}
 
-				wg.Done()
-			}()
-
-			wg.Wait()
+			// cleanup connection
+			// chat.Leave(user)
 		})
 	}
 	server.Wait()
@@ -55,6 +52,18 @@ func main() {
 type BudgetChat struct {
 	users     map[string]User
 	usersLock sync.RWMutex
+}
+
+func (b *BudgetChat) Broadcast(name, msg string) {
+	b.usersLock.RLock()
+	defer b.usersLock.RUnlock()
+
+	for _, user := range b.users {
+		if user.name == name {
+			continue
+		}
+		user.Send(fmt.Sprintf("[%s] %s", name, msg))
+	}
 }
 
 func (b *BudgetChat) Join(user User) error {
@@ -98,7 +107,15 @@ func (b *BudgetChat) Join(user User) error {
 
 type User struct {
 	conn net.Conn
+	rbuf *bufio.Reader
 	name string
+}
+
+func NewUser(conn net.Conn) User {
+	return User{
+		conn: conn,
+		rbuf: bufio.NewReader(conn),
+	}
 }
 
 func (u *User) Send(msg string) {
@@ -106,10 +123,9 @@ func (u *User) Send(msg string) {
 }
 
 func (u *User) Receive() (string, error) {
-	var s string
-	_, err := fmt.Fscanln(u.conn, &s)
+	s, err := u.rbuf.ReadString('\n')
 	if err != nil {
 		return "", err
 	}
-	return s, nil
+	return strings.TrimRight(s, "\n\r"), nil
 }
