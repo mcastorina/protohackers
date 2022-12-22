@@ -19,7 +19,7 @@ fn main() {
             let mut writer = BufWriter::new(stream);
 
             // * Send intro message.
-            writer.write(b"Sup, whatsyo name?\n").unwrap();
+            let _ = writer.write(b"Sup, whatsyo name?\n").unwrap();
             writer.flush().unwrap();
 
             // * Set user's name.
@@ -28,7 +28,7 @@ fn main() {
             let name = name.trim().to_string();
 
             // * Check name is alphanumeric.
-            if name.len() == 0 || !name.chars().all(|c| c.is_ascii_alphanumeric()) {
+            if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric()) {
                 return;
             }
 
@@ -42,20 +42,20 @@ fn main() {
                 }
 
                 // * Send list of users to this client.
-                writer.write(b"* Users here: [").unwrap();
+                let _ = writer.write(b"* Users here: [").unwrap();
                 let joined_users = user_list
                     .keys()
                     .map(AsRef::as_ref)
                     .collect::<Vec<_>>()
                     .join(", ");
-                writer.write(joined_users.as_bytes()).unwrap();
-                writer.write(b"]\n").unwrap();
+                let _ = writer.write(joined_users.as_bytes()).unwrap();
+                let _ = writer.write(b"]\n").unwrap();
                 writer.flush().unwrap();
 
                 // * Broadcast user joined.
                 let msg = format!("* {name} has joined\n");
                 for (_, writer) in user_list.iter_mut() {
-                    writer.write(msg.as_bytes()).unwrap();
+                    let _ = writer.write(msg.as_bytes()).unwrap();
                     writer.flush().unwrap();
                 }
 
@@ -79,7 +79,7 @@ fn main() {
                     if user == &name {
                         continue;
                     }
-                    writer.write(msg.as_bytes()).unwrap();
+                    let _ = writer.write(msg.as_bytes()).unwrap();
                     writer.flush().unwrap();
                 }
             }
@@ -94,7 +94,7 @@ fn main() {
                 // * Broadcast user left.
                 let msg = format!("* {name} has left\n");
                 for (_, writer) in user_list.iter_mut() {
-                    writer.write(msg.as_bytes()).unwrap();
+                    let _ = writer.write(msg.as_bytes()).unwrap();
                     writer.flush().unwrap();
                 }
             }
