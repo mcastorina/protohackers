@@ -31,6 +31,7 @@ func main() {
 				user.Send(fmt.Sprintf("lol no thanks: %s", err.Error()))
 				return
 			}
+			defer chat.Leave(user)
 
 			// start reading/writing incoming/outgoing messages
 			for {
@@ -42,8 +43,6 @@ func main() {
 				chat.Broadcast(user.name, msg)
 			}
 
-			// cleanup connection
-			// chat.Leave(user)
 		})
 	}
 	server.Wait()
@@ -103,6 +102,17 @@ func (b *BudgetChat) Join(user User) error {
 	user.Send(fmt.Sprintf("* The room contains: %v", userNames))
 
 	return nil
+}
+
+func (b *BudgetChat) Leave(user User) {
+	b.usersLock.Lock()
+	defer b.usersLock.Unlock()
+	delete(b.users, user.name)
+
+	// send leave message
+	for _, u := range b.users {
+		u.Send(fmt.Sprintf("* %s has left the room", user.name))
+	}
 }
 
 type User struct {
