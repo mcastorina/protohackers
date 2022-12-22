@@ -9,7 +9,6 @@ fn main() {
     println!("listening on :1337");
 
     let user_list: Arc<RwLock<HashMap<String, BufWriter<TcpStream>>>> = Default::default();
-    // let (messages_tx, messages_rx) = mpsc::channel();
 
     for stream in listener.incoming().filter_map(Result::ok) {
         println!("accepted new connection");
@@ -30,7 +29,7 @@ fn main() {
             let name = name.trim().to_string();
 
             // * Check name is alphanumeric.
-            if !name.chars().all(|c| c.is_ascii_alphanumeric()) {
+            if name.len() == 0 || !name.chars().all(|c| c.is_ascii_alphanumeric()) {
                 return;
             }
 
