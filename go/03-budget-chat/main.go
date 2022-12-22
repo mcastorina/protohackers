@@ -28,7 +28,7 @@ func main() {
 			user.name, _ = user.Receive()
 
 			if err := chat.Join(user); err != nil {
-				user.Send(fmt.Sprintf("lol no thanks: %s", err.Error()))
+				user.Send("lol no thanks: %s", err.Error())
 				return
 			}
 			defer chat.Leave(user)
@@ -61,7 +61,7 @@ func (b *BudgetChat) Broadcast(name, msg string) {
 		if user.name == name {
 			continue
 		}
-		user.Send(fmt.Sprintf("[%s] %s", name, msg))
+		user.Send("[%s] %s", name, msg)
 	}
 }
 
@@ -96,10 +96,10 @@ func (b *BudgetChat) Join(user User) error {
 		}
 		userNames = append(userNames, u.name)
 
-		u.Send(fmt.Sprintf("* %s has joined the room", user.name))
+		u.Send("* %s has joined the room", user.name)
 	}
 
-	user.Send(fmt.Sprintf("* The room contains: %v", userNames))
+	user.Send("* The room contains: %v", userNames)
 
 	return nil
 }
@@ -111,7 +111,7 @@ func (b *BudgetChat) Leave(user User) {
 
 	// send leave message
 	for _, u := range b.users {
-		u.Send(fmt.Sprintf("* %s has left the room", user.name))
+		u.Send("* %s has left the room", user.name)
 	}
 }
 
@@ -128,8 +128,8 @@ func NewUser(conn net.Conn) User {
 	}
 }
 
-func (u *User) Send(msg string) {
-	fmt.Fprintln(u.conn, msg)
+func (u *User) Send(f string, args ...any) {
+	fmt.Fprintln(u.conn, fmt.Sprintf(f, args...))
 }
 
 func (u *User) Receive() (string, error) {
