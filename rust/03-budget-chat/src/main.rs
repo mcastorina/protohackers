@@ -14,7 +14,6 @@ fn main() {
         println!("accepted new connection");
 
         let user_list = Arc::clone(&user_list);
-        // let messages_tx = messages_tx.clone();
         thread::spawn(move || {
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut writer = BufWriter::new(stream);
