@@ -1,0 +1,18 @@
+# fly.toml file generated for miccah-protohackers on 2022-11-01T22:01:51-05:00
+
+app = "miccah-protohackers"
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
+
+[[services]]
+  internal_port = 1337
+  processes = ["app"]
+  protocol = "udp"
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    port = 1337
