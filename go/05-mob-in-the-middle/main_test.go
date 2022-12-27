@@ -22,6 +22,7 @@ func TestExtractBoguscoin(t *testing.T) {
 		{"7F1u3wSD5RbOHQmupo9nx4TnhQ", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 		{"7iKDZEwPZSqIvDnHvVN2r0hUWXD5rHX", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 		{"7YWHMfk9JZe0LM0g1ZauHuiSxhI", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
+		{"This is a product ID, not a Boguscoin: 7YWHMfk9JZe0LM0g1ZauHuiSxhI-GYUyb6MEuGSsxsdUO79xLjNMH8e-1234", "This is a product ID, not a Boguscoin: 7YWHMfk9JZe0LM0g1ZauHuiSxhI-GYUyb6MEuGSsxsdUO79xLjNMH8e-1234"},
 	}
 
 	for _, tt := range tests {

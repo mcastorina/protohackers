@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"regexp"
@@ -93,6 +94,6 @@ func readLine(ctx context.Context, reader *bufio.Reader) (string, bool) {
 }
 
 func updateMessage(msg string) string {
-	var re = regexp.MustCompile(`\b7[a-zA-Z0-9]{25,34}\b`)
-	return re.ReplaceAllString(msg, tonyBoguscoinAddress)
+	var re = regexp.MustCompile(`(^|\s+)(7[a-zA-Z0-9]{25,34})(\s+|$)`)
+	return re.ReplaceAllString(msg, fmt.Sprintf("${1}%s${3}", tonyBoguscoinAddress))
 }
