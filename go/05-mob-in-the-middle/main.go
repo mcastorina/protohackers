@@ -5,10 +5,12 @@ import (
 	"context"
 	"log"
 	"net"
+	"regexp"
 	"sync"
 )
 
 const upstreamBudgetChatServer = "chat.protohackers.com:16963"
+const tonyBoguscoinAddress = "7YWHMfk9JZe0LM0g1ZauHuiSxhI"
 
 func main() {
 	server, err := NewServer()
@@ -38,9 +40,10 @@ func main() {
 					msg := scanner.Text()
 
 					// Filter/map user message.
+					updatedMsg := updateMessage(msg)
 
 					// Write to upstream.
-					upstream.Write([]byte(msg + "\n"))
+					upstream.Write([]byte(updatedMsg + "\n"))
 				}
 				log.Println("user disconnected")
 				cancel()
@@ -56,9 +59,10 @@ func main() {
 					}
 
 					// Filter/map user message.
+					updatedMsg := updateMessage(msg)
 
 					// Write to connection.
-					conn.Write([]byte(msg))
+					conn.Write([]byte(updatedMsg))
 				}
 				log.Println("upstream disconnected")
 			}()
@@ -88,6 +92,7 @@ func readLine(ctx context.Context, reader *bufio.Reader) (string, bool) {
 	}
 }
 
-func extractBoguscoin(msg string) (string, bool) {
-	return "", false
+func updateMessage(msg string) string {
+	var re = regexp.MustCompile(`\b7[a-zA-Z0-9]{25,34}\b`)
+	return re.ReplaceAllString(msg, tonyBoguscoinAddress)
 }

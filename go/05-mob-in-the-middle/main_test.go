@@ -14,20 +14,20 @@ func TestExtractBoguscoin(t *testing.T) {
 		message  string
 		expected string
 	}{
-		{"abc", ""},
+		{"abc", "abc"},
 		{"", ""},
-		{"7hadhjdfhbbbbasjajajasjsjaj", "7hadhjdfhbbbbasjajajasjsjaj"},
-		{"7hadhjdfhbbbbasjajajasjsjajsjahadhjdfhbbbbasjajajasjsjajsja", ""},
-		{"x 7hadhjdfhbbbbasjajajasjsjaj ", "7hadhjdfhbbbbasjajajasjsjaj"},
-		{"x 7hadhjdfhbbbbasjajajasjsjaj ", "7hadhjdfhbbbbasjajajasjsjaj"},
-		{"7F1u3wSD5RbOHQmupo9nx4TnhQ", "7F1u3wSD5RbOHQmupo9nx4TnhQ"},
-		{"7iKDZEwPZSqIvDnHvVN2r0hUWXD5rHX", "7iKDZEwPZSqIvDnHvVN2r0hUWXD5rHX"},
+		{"7hadhjdfhbbbbasjajajasjsjaj", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
+		{"7hadhjdfhbbbbasjajajasjsjajsjahadhjdfhbbbbasjajajasjsjajsja", "7hadhjdfhbbbbasjajajasjsjajsjahadhjdfhbbbbasjajajasjsjajsja"},
+		{"x 7hadhjdfhbbbbasjajajasjsjaj ", "x 7YWHMfk9JZe0LM0g1ZauHuiSxhI "},
+		{"7F1u3wSD5RbOHQmupo9nx4TnhQ", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
+		{"7iKDZEwPZSqIvDnHvVN2r0hUWXD5rHX", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
+		{"7YWHMfk9JZe0LM0g1ZauHuiSxhI", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.message, func(t *testing.T) {
-			extractedBogusCoin, _ := extractBoguscoin(tt.message)
-			assert.Equal(t, tt.expected, extractedBogusCoin)
+			updatedMsg := updateMessage(tt.message)
+			assert.Equal(t, tt.expected, updatedMsg)
 		})
 
 	}
