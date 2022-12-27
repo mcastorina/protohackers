@@ -39,9 +39,8 @@ fn main() {
             });
 
             // Asynchronously read from upstream and send to client.
-            let done = done_signal.clone();
             let h2 = thread::spawn(move || {
-                proxy(upstream_reader, client_writer, done);
+                proxy(upstream_reader, client_writer, done_signal);
             });
 
             // Wait for both threads to finish.
@@ -77,7 +76,7 @@ fn proxy<R: Read, W: Write>(
         }
         msg = replace_boguscoin(msg);
         let _ = writer.write(msg.as_bytes()).unwrap();
-        let _ = writer.flush().unwrap();
+        writer.flush().unwrap();
     }
 }
 
