@@ -1,5 +1,5 @@
 use regex::Regex;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -16,17 +16,15 @@ fn main() {
         println!("accepted new connection");
 
         thread::spawn(move || {
-            // Create client stream reader and writer.
-            let mut client_reader = BufReader::new(stream.try_clone().unwrap());
-            let mut client_writer = BufWriter::new(stream);
-
             // Open a connection to upstream.
             let upstream = TcpStream::connect(UPSTREAM_ADDRESS).unwrap();
             upstream
                 .set_read_timeout(Some(Duration::from_millis(200)))
                 .unwrap();
-            let mut upstream_reader = BufReader::new(upstream.try_clone().unwrap());
-            let mut upstream_writer = BufWriter::new(upstream);
+
+            // Create separate readers and writers.
+            let (client_reader, client_writer) = split_stream(stream);
+            let (upstream_reader, upstream_writer) = split_stream(upstream);
 
             // Create a signal to indicate the client has disconnected and we should disconnect the
             // upstream connection.
@@ -35,52 +33,62 @@ fn main() {
             // Asynchronously read from client and send to upstream.
             let done = done_signal.clone();
             let h1 = thread::spawn(move || {
-                let mut msg = String::new();
-                loop {
-                    msg.clear();
-                    if let Ok(0) = client_reader.read_line(&mut msg) {
-                        break;
-                    }
-                    msg = replace_boguscoin(msg);
-                    let _ = upstream_writer.write(msg.as_bytes()).unwrap();
-                    let _ = upstream_writer.flush().unwrap();
-                }
-                *done.write().unwrap() = true;
+                proxy(client_reader, upstream_writer, done.clone());
                 println!("client disconnected");
+                *done.write().unwrap() = true;
             });
 
             // Asynchronously read from upstream and send to client.
             let done = done_signal.clone();
             let h2 = thread::spawn(move || {
-                let mut msg = String::new();
-                loop {
-                    msg.clear();
-                    match upstream_reader.read_line(&mut msg) {
-                        // The upstream closed the connection.
-                        Ok(0) => break,
-                        // We have a read timeout so check to see if we should disconnect.
-                        Err(_) => {
-                            if *done.read().unwrap() {
-                                break;
-                            }
-                            continue;
-                        }
-                        // We read some data.
-                        _ => (),
-                    }
-                    msg = replace_boguscoin(msg);
-                    let _ = client_writer.write(msg.as_bytes()).unwrap();
-                    let _ = client_writer.flush().unwrap();
-                }
-                println!("upstream disconnected");
+                proxy(upstream_reader, client_writer, done);
             });
 
+            // Wait for both threads to finish.
             h1.join().unwrap();
             h2.join().unwrap();
         });
     }
 }
 
+/// Proxy a read buffer into a write buffer, replacing all instances of a boguscoin with Tony's
+/// boguscoin. If the reader errors (for e.g. from a timeout), the done mutex is checked to exit
+/// the loop.
+fn proxy<R: Read, W: Write>(
+    mut reader: BufReader<R>,
+    mut writer: BufWriter<W>,
+    done: Arc<RwLock<bool>>,
+) {
+    let mut msg = String::new();
+    loop {
+        msg.clear();
+        match reader.read_line(&mut msg) {
+            // The connection closed.
+            Ok(0) => break,
+            // Possibly a read timeout - check to see if we should exit.
+            Err(_) => {
+                if *done.read().unwrap() {
+                    break;
+                }
+                continue;
+            }
+            // We read some data.
+            _ => (),
+        }
+        msg = replace_boguscoin(msg);
+        let _ = writer.write(msg.as_bytes()).unwrap();
+        let _ = writer.flush().unwrap();
+    }
+}
+
+/// Split a TcpStream into a buffered reader and writer.
+fn split_stream(stream: TcpStream) -> (BufReader<TcpStream>, BufWriter<TcpStream>) {
+    let reader = BufReader::new(stream.try_clone().unwrap());
+    let writer = BufWriter::new(stream);
+    (reader, writer)
+}
+
+/// Replace all instances of a boguscoin with Tony's boguscoin.
 fn replace_boguscoin(msg: impl AsRef<str>) -> String {
     let msg = msg.as_ref();
     let re = Regex::new(r"\b7[[:alnum:]]{25,34}\b").unwrap();
