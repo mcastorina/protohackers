@@ -36,19 +36,22 @@ func main() {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				scanner := bufio.NewScanner(conn)
-				for scanner.Scan() {
+				defer cancel()
+				reader := bufio.NewReader(conn)
+				for {
 					// Read message from user.
-					msg := scanner.Text()
+					msg, ok := readLine(ctx, reader)
+					if !ok {
+						break
+					}
 
 					// Filter/map user message.
 					updatedMsg := updateMessage(msg)
 
 					// Write to upstream.
-					upstream.Write([]byte(updatedMsg + "\n"))
+					upstream.Write([]byte(updatedMsg))
 				}
 				log.Println("user disconnected")
-				cancel()
 			}()
 			go func() {
 				defer wg.Done()
