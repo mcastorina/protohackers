@@ -19,6 +19,7 @@ func TestExtractBoguscoin(t *testing.T) {
 		{"7hadhjdfhbbbbasjajajasjsjaj", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 		{"7hadhjdfhbbbbasjajajasjsjajsjahadhjdfhbbbbasjajajasjsjajsja", "7hadhjdfhbbbbasjajajasjsjajsjahadhjdfhbbbbasjajajasjsjajsja"},
 		{"x 7hadhjdfhbbbbasjajajasjsjaj ", "x 7YWHMfk9JZe0LM0g1ZauHuiSxhI "},
+		{"7hadhjdfhbbbbasjajajasjsjaj 7hadhjdfhbbbbasjajajasjsjaj", "7YWHMfk9JZe0LM0g1ZauHuiSxhI 7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 		{"7F1u3wSD5RbOHQmupo9nx4TnhQ", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 		{"7iKDZEwPZSqIvDnHvVN2r0hUWXD5rHX", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
 		{"7YWHMfk9JZe0LM0g1ZauHuiSxhI", "7YWHMfk9JZe0LM0g1ZauHuiSxhI"},
