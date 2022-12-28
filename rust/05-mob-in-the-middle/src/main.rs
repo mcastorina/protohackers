@@ -1,9 +1,7 @@
 use regex::Regex;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, RwLock};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::thread;
-use std::time::Duration;
 
 const UPSTREAM_ADDRESS: &str = "chat.protohackers.com:16963";
 const TONY_BOGUSCOIN_ADDRESS: &str = "7YWHMfk9JZe0LM0g1ZauHuiSxhI";
@@ -18,29 +16,22 @@ fn main() {
         thread::spawn(move || {
             // Open a connection to upstream.
             let upstream = TcpStream::connect(UPSTREAM_ADDRESS).unwrap();
-            upstream
-                .set_read_timeout(Some(Duration::from_millis(200)))
-                .unwrap();
 
             // Create separate readers and writers.
-            let (client_reader, client_writer) = split_stream(stream);
-            let (upstream_reader, upstream_writer) = split_stream(upstream);
-
-            // Create a signal to indicate the client has disconnected and we should disconnect the
-            // upstream connection.
-            let done_signal: Arc<RwLock<bool>> = Default::default();
+            let (mut client_reader, mut client_writer) = split_stream(stream);
+            let (mut upstream_reader, mut upstream_writer) = split_stream(upstream);
 
             // Asynchronously read from client and send to upstream.
-            let done = done_signal.clone();
             let h1 = thread::spawn(move || {
-                proxy(client_reader, upstream_writer, done.clone());
+                proxy(&mut client_reader, &mut upstream_writer);
                 println!("client disconnected");
-                *done.write().unwrap() = true;
+                let _ = upstream_writer.get_ref().shutdown(Shutdown::Both);
             });
 
             // Asynchronously read from upstream and send to client.
             let h2 = thread::spawn(move || {
-                proxy(upstream_reader, client_writer, done_signal);
+                proxy(&mut upstream_reader, &mut client_writer);
+                let _ = client_writer.get_ref().shutdown(Shutdown::Both);
             });
 
             // Wait for both threads to finish.
@@ -53,30 +44,21 @@ fn main() {
 /// Proxy a read buffer into a write buffer, replacing all instances of a boguscoin with Tony's
 /// boguscoin. If the reader errors (for e.g. from a timeout), the done mutex is checked to exit
 /// the loop.
-fn proxy<R: Read, W: Write>(
-    mut reader: BufReader<R>,
-    mut writer: BufWriter<W>,
-    done: Arc<RwLock<bool>>,
-) {
+fn proxy<R: Read, W: Write>(reader: &mut BufReader<R>, writer: &mut BufWriter<W>) {
     let mut msg = String::new();
     loop {
         msg.clear();
         match reader.read_line(&mut msg) {
             // The connection closed.
-            Ok(0) => break,
-            // Possibly a read timeout - check to see if we should exit.
-            Err(_) => {
-                if *done.read().unwrap() {
-                    break;
-                }
-                continue;
-            }
+            Ok(0) | Err(_) => break,
             // We read some data.
             _ => (),
         }
         msg = replace_boguscoin(msg);
-        let _ = writer.write(msg.as_bytes()).unwrap();
-        writer.flush().unwrap();
+        if writer.write_all(msg.as_bytes()).is_err() {
+            break;
+        }
+        let _ = writer.flush();
     }
 }
 
