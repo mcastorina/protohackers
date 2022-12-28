@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"log"
 	"net"
 	"regexp"
 	"strings"
-	"sync"
 )
 
 const upstreamBudgetChatServer = "chat.protohackers.com:16963"
@@ -21,83 +19,57 @@ func main() {
 	}
 
 	for conn := range server.Connections() {
-		server.Handle(conn, func(conn net.Conn) {
-			// Create upstream connection.
-			upstream, err := net.Dial("tcp", upstreamBudgetChatServer)
-			if err != nil {
-				log.Println(err)
-				return
-			}
+		// Create upstream connection.
+		upstream, err := net.Dial("tcp", upstreamBudgetChatServer)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		conn := conn
+		// Asynchronously read from client and send to upstream.
+		go func() {
 			defer upstream.Close()
+			clientReader := bufio.NewReader(conn)
+			upstreamWriter := bufio.NewWriter(upstream)
 
-			var wg sync.WaitGroup
-			ctx, cancel := context.WithCancel(context.Background())
+			proxy(clientReader, upstreamWriter, replaceBoguscoins)
+			log.Println("user disconnected")
+		}()
+		// Asynchronously read from upstream and send to client.
+		go func() {
+			defer conn.Close()
+			upstreamReader := bufio.NewReader(upstream)
+			clientWriter := bufio.NewWriter(conn)
 
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
-				defer cancel()
-				reader := bufio.NewReader(conn)
-				for {
-					// Read message from user.
-					msg, ok := readLine(ctx, reader)
-					if !ok {
-						break
-					}
-
-					// Filter/map user message.
-					updatedMsg := updateMessage(msg)
-
-					// Write to upstream.
-					upstream.Write([]byte(updatedMsg))
-				}
-				log.Println("user disconnected")
-			}()
-			go func() {
-				defer wg.Done()
-				upstreamReader := bufio.NewReader(upstream)
-				for {
-					// Try read message from upstream.
-					msg, ok := readLine(ctx, upstreamReader)
-					if !ok {
-						break
-					}
-
-					// Filter/map user message.
-					updatedMsg := updateMessage(msg)
-
-					// Write to connection.
-					conn.Write([]byte(updatedMsg))
-				}
-				log.Println("upstream disconnected")
-			}()
-
-			wg.Wait()
-		})
+			proxy(upstreamReader, clientWriter, replaceBoguscoins)
+			log.Println("upstream disconnected")
+		}()
 	}
 	server.Wait()
 }
 
-func readLine(ctx context.Context, reader *bufio.Reader) (string, bool) {
-	done := make(chan struct{})
-	var s string
-	var err error
-	go func() {
-		s, err = reader.ReadString('\n')
-		done <- struct{}{}
-	}()
-	select {
-	case <-done:
+// proxy will read from reader, transform the message using mapper, then write
+// to writer. This function runs until either read or write operation fails.
+func proxy(reader *bufio.Reader, writer *bufio.Writer, mapper func(string) string) {
+	for {
+		msg, err := reader.ReadString('\n')
 		if err != nil {
-			return "", false
+			return
 		}
-		return s, true
-	case <-ctx.Done():
-		return "", false
+		msg = mapper(msg)
+		if _, err = writer.WriteString(msg); err != nil {
+			return
+		}
+		if err = writer.Flush(); err != nil {
+			return
+		}
 	}
 }
 
-func updateMessage(msg string) string {
+// replaceBoguscoins replaces all boguscoin addresses found in msg with Tony's
+// boguscoin address.
+func replaceBoguscoins(msg string) string {
 	msg = strings.ReplaceAll(msg, " ", " 🧑‍🎄 ")
 	var re = regexp.MustCompile(`(^|\s)(7[a-zA-Z0-9]{25,34})(\s|$)`)
 	addressReplacedMsg := re.ReplaceAllString(msg, fmt.Sprintf("${1}%s${3}", tonyBoguscoinAddress))
