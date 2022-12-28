@@ -13,30 +13,24 @@ fn main() {
     for stream in listener.incoming().filter_map(Result::ok) {
         println!("accepted new connection");
 
+        // Open a connection to upstream.
+        let upstream = TcpStream::connect(UPSTREAM_ADDRESS).unwrap();
+
+        // Create separate readers and writers.
+        let (mut client_reader, mut client_writer) = split_stream(stream);
+        let (mut upstream_reader, mut upstream_writer) = split_stream(upstream);
+
+        // Asynchronously read from client and send to upstream.
         thread::spawn(move || {
-            // Open a connection to upstream.
-            let upstream = TcpStream::connect(UPSTREAM_ADDRESS).unwrap();
+            proxy(&mut client_reader, &mut upstream_writer);
+            println!("client disconnected");
+            let _ = upstream_writer.get_ref().shutdown(Shutdown::Both);
+        });
 
-            // Create separate readers and writers.
-            let (mut client_reader, mut client_writer) = split_stream(stream);
-            let (mut upstream_reader, mut upstream_writer) = split_stream(upstream);
-
-            // Asynchronously read from client and send to upstream.
-            let h1 = thread::spawn(move || {
-                proxy(&mut client_reader, &mut upstream_writer);
-                println!("client disconnected");
-                let _ = upstream_writer.get_ref().shutdown(Shutdown::Both);
-            });
-
-            // Asynchronously read from upstream and send to client.
-            let h2 = thread::spawn(move || {
-                proxy(&mut upstream_reader, &mut client_writer);
-                let _ = client_writer.get_ref().shutdown(Shutdown::Both);
-            });
-
-            // Wait for both threads to finish.
-            h1.join().unwrap();
-            h2.join().unwrap();
+        // Asynchronously read from upstream and send to client.
+        thread::spawn(move || {
+            proxy(&mut upstream_reader, &mut client_writer);
+            let _ = client_writer.get_ref().shutdown(Shutdown::Both);
         });
     }
 }
