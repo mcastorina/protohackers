@@ -36,8 +36,7 @@ fn main() {
 }
 
 /// Proxy a read buffer into a write buffer, replacing all instances of a boguscoin with Tony's
-/// boguscoin. If the reader errors (for e.g. from a timeout), the done mutex is checked to exit
-/// the loop.
+/// boguscoin. If either a read or write operation errors, this function will return.
 fn proxy<R: Read, W: Write>(reader: &mut BufReader<R>, writer: &mut BufWriter<W>) {
     let mut msg = String::new();
     loop {
