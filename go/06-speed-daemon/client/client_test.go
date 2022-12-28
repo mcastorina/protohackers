@@ -68,6 +68,46 @@ func writeTester(writer io.Writer) rwc {
 	return rwc{Writer: writer}
 }
 
+func TestWriteU8(t *testing.T) {
+	buff := bytes.NewBuffer(nil)
+	client := New(writeTester(buff))
+
+	client.WriteU8(0x10)
+	client.Flush()
+
+	actualBytes := buff.Bytes()
+	assert.Equal(t, 1, len(actualBytes))
+	assert.Equal(t, byte(0x10), actualBytes[0])
+}
+
+func TestWriteU16(t *testing.T) {
+	buff := bytes.NewBuffer(nil)
+	client := New(writeTester(buff))
+
+	client.WriteU16(0x1025)
+	client.Flush()
+
+	actualBytes := buff.Bytes()
+	assert.Equal(t, 2, len(actualBytes))
+	assert.Equal(t, byte(0x10), actualBytes[0])
+	assert.Equal(t, byte(0x25), actualBytes[1])
+}
+
+func TestWriteU32(t *testing.T) {
+	buff := bytes.NewBuffer(nil)
+	client := New(writeTester(buff))
+
+	client.WriteU32(0x10203040)
+	client.Flush()
+
+	actualBytes := buff.Bytes()
+	assert.Equal(t, 4, len(actualBytes))
+	assert.Equal(t, byte(0x10), actualBytes[0])
+	assert.Equal(t, byte(0x20), actualBytes[1])
+	assert.Equal(t, byte(0x30), actualBytes[2])
+	assert.Equal(t, byte(0x40), actualBytes[3])
+}
+
 func TestWriteStr(t *testing.T) {
 	input := "hello"
 	buff := bytes.NewBuffer(nil)
