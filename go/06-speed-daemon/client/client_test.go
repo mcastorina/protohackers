@@ -63,3 +63,23 @@ func TestReadStr(t *testing.T) {
 	_, err := client.ReadStr()
 	assert.Error(t, err, "not enough bytes")
 }
+
+func writeTester(writer io.Writer) rwc {
+	return rwc{Writer: writer}
+}
+
+func TestWriteStr(t *testing.T) {
+	input := "hello"
+	buff := bytes.NewBuffer(nil)
+	client := New(writeTester(buff))
+
+	client.WriteStr(input)
+	client.Flush()
+
+	expectedBytes := append([]byte{byte(len(input))}, []byte(input)...)
+	actualBytes := buff.Bytes()
+
+	for i, actualByte := range actualBytes {
+		assert.Equal(t, expectedBytes[i], actualByte)
+	}
+}

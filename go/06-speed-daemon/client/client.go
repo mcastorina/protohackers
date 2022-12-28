@@ -65,17 +65,29 @@ func (c *Client) WriteU8(arg uint8) error {
 }
 
 func (c *Client) WriteU16(arg uint16) error {
-	panic("todo")
+	writeBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(writeBytes, arg)
+	_, err := c.wbuf.Write(writeBytes)
+	return err
 }
 
 func (c *Client) WriteU32(arg uint32) error {
-	panic("todo")
+	writeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(writeBytes, arg)
+	_, err := c.wbuf.Write(writeBytes)
+	return err
 }
 
 func (c *Client) WriteStr(arg string) error {
-	panic("todo")
+	length := len([]byte(arg))
+	err := c.wbuf.WriteByte(uint8(length))
+	if err != nil {
+		return err
+	}
+	_, err = c.wbuf.WriteString(arg)
+	return err
 }
 
 func (c *Client) Flush() error {
-	panic("todo")
+	return c.wbuf.Flush()
 }
