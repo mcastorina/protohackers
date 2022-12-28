@@ -91,3 +91,70 @@ func (c *Client) WriteStr(arg string) error {
 func (c *Client) Flush() error {
 	return c.wbuf.Flush()
 }
+
+func (c *Client) AsCamera() (*CameraClient, error) {
+	kind, err := c.ReadU8()
+	if err != nil {
+		return nil, err
+	}
+	if kind != 0x80 {
+		if err := c.rbuf.UnreadByte(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("not a camera")
+	}
+
+	road, err := c.ReadU16()
+	if err != nil {
+		return nil, err
+	}
+
+	mile, err := c.ReadU16()
+	if err != nil {
+		return nil, err
+	}
+
+	limit, err := c.ReadU16()
+	if err != nil {
+		return nil, err
+	}
+
+	return &CameraClient{
+		Client: *c,
+		Road:   road,
+		Mile:   mile,
+		Limit:  limit,
+	}, nil
+}
+
+func (c *Client) AsDispatcher() (*DispatcherClient, error) {
+	kind, err := c.ReadU8()
+	if err != nil {
+		return nil, err
+	}
+	if kind != 0x81 {
+		if err := c.rbuf.UnreadByte(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("not a dispatcher")
+	}
+
+	numRoads, err := c.ReadU8()
+	if err != nil {
+		return nil, err
+	}
+
+	roadIDs := make([]uint16, numRoads)
+	for i := 0; i < int(numRoads); i++ {
+		roadID, err := c.ReadU16()
+		if err != nil {
+			return nil, err
+		}
+		roadIDs[i] = roadID
+	}
+
+	return &DispatcherClient{
+		Client: *c,
+		Roads:  roadIDs,
+	}, nil
+}
