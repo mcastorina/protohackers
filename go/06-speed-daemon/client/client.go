@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"io"
 )
 
@@ -27,6 +28,9 @@ func (c *Client) ReadU16() (uint16, error) {
 	if err != nil {
 		return 0, err
 	}
+	if len(data) != 2 {
+		return 0, errors.New("not enough bytes")
+	}
 	return binary.BigEndian.Uint16(data), nil
 }
 
@@ -34,6 +38,9 @@ func (c *Client) ReadU32() (uint32, error) {
 	data, err := io.ReadAll(io.LimitReader(c.rbuf, 4))
 	if err != nil {
 		return 0, err
+	}
+	if len(data) != 4 {
+		return 0, errors.New("not enough bytes")
 	}
 	return binary.BigEndian.Uint32(data), nil
 }
@@ -46,6 +53,9 @@ func (c *Client) ReadStr() (string, error) {
 	data, err := io.ReadAll(io.LimitReader(c.rbuf, int64(length)))
 	if err != nil {
 		return "", err
+	}
+	if len(data) != int(length) {
+		return "", errors.New("not enough bytes")
 	}
 	return string(data), nil
 }
