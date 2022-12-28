@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 
@@ -16,7 +17,7 @@ func main() {
 	for conn := range server.Connections() {
 		server.Handle(conn, func(conn net.Conn) {
 			c := client.New(conn)
-			println(c)
+			fmt.Println(c)
 		})
 	}
 	server.Wait()
