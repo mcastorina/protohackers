@@ -19,6 +19,13 @@ func main() {
 			c := client.New(conn)
 			if camera, err := c.AsCamera(); err == nil {
 				fmt.Println("camera", camera)
+
+				for {
+					if plateInfo, err := camera.ReadPlate(); err == nil {
+						// TODO play with plateinfo logic
+						fmt.Println(plateInfo)
+					}
+				}
 			} else if dispatcher, err := c.AsDispatcher(); err == nil {
 				fmt.Println("dispatcher", dispatcher)
 			} else {
