@@ -158,3 +158,13 @@ func (c *Client) AsDispatcher() (*DispatcherClient, error) {
 		Roads:  roadIDs,
 	}, nil
 }
+
+func (c *Client) SendError(err error) error {
+	if err := c.WriteU8(0x10); err != nil {
+		return err
+	}
+	if err := c.WriteStr(err.Error()); err != nil {
+		return err
+	}
+	return c.Flush()
+}
