@@ -14,15 +14,9 @@ processes = []
   processes = ["app"]
   protocol = "tcp"
   [services.concurrency]
-    hard_limit = 25
-    soft_limit = 20
+    hard_limit = 250
+    soft_limit = 200
     type = "connections"
 
   [[services.ports]]
     port = 1337
-
-  [[services.tcp_checks]]
-    grace_period = "1s"
-    interval = "15s"
-    restart_limit = 0
-    timeout = "2s"

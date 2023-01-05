@@ -11,7 +11,6 @@ import (
 type rwc struct {
 	io.Reader
 	io.Writer
-	io.Closer
 }
 
 func readTester(reader io.Reader) rwc {

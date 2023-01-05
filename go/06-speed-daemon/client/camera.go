@@ -1,9 +1,11 @@
 package client
 
-import "errors"
+type Camera struct {
+	*Client
+	CameraDetails
+}
 
-type CameraClient struct {
-	Client
+type CameraDetails struct {
 	Road  uint16
 	Mile  uint16
 	Limit uint16
@@ -14,27 +16,9 @@ type PlateInfo struct {
 	Timestamp uint32
 }
 
-// plate -> road -> [(mile, timestamp), ...]
-
-// TICKETMASTER
-// plate -> day -> ticket
-// day -> plate -> ticket
-
-// plateABC : {
-// 	"road_123" : [(mile_123, ts_456), (mile_324, ts_457), (mile_789, ts_458)],
-// 	"road_5345": [324, 545, 39],
-// }
-
-func (c *CameraClient) ReadPlate() (*PlateInfo, error) {
-	kind, err := c.ReadU8()
-	if err != nil {
+func (c *Camera) ReadPlate() (*PlateInfo, error) {
+	if err := c.Expect(0x20); err != nil {
 		return nil, err
-	}
-	if kind != 0x20 {
-		if err := c.rbuf.UnreadByte(); err != nil {
-			return nil, err
-		}
-		return nil, errors.New("not a plate")
 	}
 
 	plate, err := c.ReadStr()
@@ -51,5 +35,41 @@ func (c *CameraClient) ReadPlate() (*PlateInfo, error) {
 		Plate:     plate,
 		Timestamp: timestamp,
 	}, nil
+}
 
+type Reading struct {
+	CameraDetails
+	PlateInfo
+}
+
+func (c *Camera) Read() (*Reading, error) {
+	plate, err := c.ReadPlate()
+	if err != nil {
+		return nil, err
+	}
+	return &Reading{
+		CameraDetails: c.CameraDetails,
+		PlateInfo:     *plate,
+	}, nil
+}
+
+func (c *Camera) Run() <-chan *Reading {
+	ch := make(chan *Reading)
+	c.workersWG.Add(1)
+	go func() {
+		defer c.workersWG.Done()
+		defer close(ch)
+		for {
+			if reading, err := c.Read(); err == nil {
+				ch <- reading
+				continue
+			}
+			if err := c.HandleCommonMessage(); err != nil {
+				// Return an error and disconnect.
+				_ = c.SendError(err)
+				return
+			}
+		}
+	}()
+	return ch
 }
