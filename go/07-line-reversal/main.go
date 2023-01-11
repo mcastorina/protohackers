@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 
 	"07-line-reversal/server"
@@ -17,35 +20,37 @@ type Connection struct {
 }
 
 func main() {
-	sessionToConnection := make(map[string]*Connection)
+	sessionToConnection := make(map[int32]*Connection)
 
 	server, err := server.NewUDPServer()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("running version", version)
+	_, debug := os.LookupEnv("DEBUG")
+	log.Println("running version", version, "( debug =", debug, ")")
 
 	for packet := range server.Packets() {
 		request := string(packet.Data)
+		if debug {
+			request = strings.TrimSpace(request)
+		}
 		log.Println("request:", request)
 
-		parts := strings.SplitN(request, "/", 3)
+		parts, err := parseLRCP(request)
+		if err != nil {
+			continue
+		}
 		fmt.Println(parts)
 
-		if len(parts) == 1 {
-			panic("invalid request")
-		}
-
-		if parts[1] == "connect" {
+		if parts[0] == "connect" {
 			// get session id from request
-			sessionId := parts[2] // TODO take off "/"
+			sessionId, _ := strconv.Atoi(parts[1])
 
 			// get or create connection
-			// TODO use lock
-			_, ok := sessionToConnection[sessionId]
+			_, ok := sessionToConnection[int32(sessionId)]
 			if !ok {
 				fmt.Println("not okay!")
-				sessionToConnection[sessionId] = &Connection{
+				sessionToConnection[int32(sessionId)] = &Connection{
 					addr: packet.Addr,
 				}
 			} else {
@@ -53,4 +58,14 @@ func main() {
 			}
 		}
 	}
+}
+
+// parseLRCP parses a LRCP packet into its parts
+func parseLRCP(data string) ([]string, error) {
+	if !strings.HasPrefix(data, "/") || !strings.HasSuffix(data, "/") {
+		return nil, errors.New("invalid packet format")
+	}
+	data = strings.TrimPrefix(strings.TrimSuffix(data, "/"), "/")
+	parts := strings.SplitN(data, "/", 4)
+	return parts, nil
 }
