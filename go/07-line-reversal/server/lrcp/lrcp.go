@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -83,14 +84,19 @@ func (s *Server) listen() {
 		case ackMsg:
 			conn.ack(msg)
 		case closeMsg:
-			_ = s.server.WriteTo(packet.Data, conn.addr)
+			_ = conn.Close()
 			delete(conns, id)
 		}
 	}
 }
 
 func (c *Conn) Close() error {
-	panic("todo")
+	if !c.Open() {
+		return nil
+	}
+	c.send("close")
+	c.addr = nil
+	return nil
 }
 
 func (c *Conn) connect(addr net.Addr, msg connectMsg) {
@@ -100,7 +106,7 @@ func (c *Conn) connect(addr net.Addr, msg connectMsg) {
 
 func (c *Conn) data(msg dataMsg) {
 	if !c.Open() {
-		c.send("close", c.id)
+		c.send("close")
 		return
 	}
 }
@@ -109,14 +115,16 @@ func (c *Conn) ack(msg ackMsg) {
 	panic("todo")
 }
 
-func (c *Conn) send(a ...any) {
-	parts := make([]string, len(a))
-	for i, a := range a {
-		switch a := a.(type) {
+func (c *Conn) send(cmd string, args ...any) {
+	parts := make([]string, len(args)+2)
+	parts[0] = cmd
+	parts[1] = strconv.FormatInt(int64(c.id), 10)
+	for i, arg := range args {
+		switch arg := arg.(type) {
 		case string:
-			parts[i] = escape(a)
+			parts[i+2] = escape(arg)
 		default:
-			parts[i] = fmt.Sprintf("%v", a)
+			parts[i+2] = fmt.Sprintf("%v", arg)
 		}
 	}
 	msg := fmt.Sprintf("/%s/", strings.Join(parts, "/"))
