@@ -1,4 +1,4 @@
-package server
+package udp
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"sync"
 )
 
-type UDPServer struct {
+type Server struct {
 	listener net.PacketConn
 	packets  chan Packet
 	cancel   context.CancelFunc
 	workers  sync.WaitGroup
 }
 
-func NewUDPServer() (*UDPServer, error) {
+func NewServer() (*Server, error) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 
 	var lc net.ListenConfig
@@ -32,7 +32,7 @@ func NewUDPServer() (*UDPServer, error) {
 	}
 	log.Println("listening on udp :1337")
 
-	server := UDPServer{
+	server := Server{
 		listener: listener,
 		packets:  make(chan Packet),
 		cancel:   cancel,
@@ -48,12 +48,12 @@ func NewUDPServer() (*UDPServer, error) {
 	return &server, nil
 }
 
-func (s *UDPServer) Packets() <-chan Packet {
+func (s *Server) Packets() <-chan Packet {
 	return s.packets
 }
 
 // Close shuts down the server.
-func (s *UDPServer) Close() {
+func (s *Server) Close() {
 	log.Println("shutting down")
 	s.cancel()
 	if err := s.listener.Close(); err != nil {
@@ -64,12 +64,12 @@ func (s *UDPServer) Close() {
 }
 
 // Wait for the context to cancel, then call s.Close().
-func (s *UDPServer) closeServerOnCancel(ctx context.Context) {
+func (s *Server) closeServerOnCancel(ctx context.Context) {
 	<-ctx.Done()
 	s.Close()
 }
 
-func (s *UDPServer) readPackets(ctx context.Context) {
+func (s *Server) readPackets(ctx context.Context) {
 	for {
 		buf := make([]byte, 1024)
 		n, addr, err := s.listener.ReadFrom(buf)
@@ -97,10 +97,15 @@ func (s *UDPServer) readPackets(ctx context.Context) {
 type Packet struct {
 	Data   []byte
 	Addr   net.Addr
-	server *UDPServer
+	server *Server
 }
 
 func (p *Packet) Reply(data []byte) error {
 	_, err := p.server.listener.WriteTo(data, p.Addr)
+	return err
+}
+
+func (s *Server) WriteTo(data []byte, addr net.Addr) error {
+	_, err := s.listener.WriteTo(data, addr)
 	return err
 }

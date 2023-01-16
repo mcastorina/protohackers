@@ -1,4 +1,4 @@
-package server
+package tcp
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"sync"
 )
 
-// Server is a struct providing a simple interface for managing TCP connections
-// on port 1337.
+// Server is a struct providing a simple interface for managing TCP
+// connections on port 1337.
 type Server struct {
 	listener net.Listener
 	conns    chan net.Conn
@@ -18,8 +18,8 @@ type Server struct {
 	workers  sync.WaitGroup
 }
 
-// NewServer listens for TCP connections on port 1337 and handles cleaning up
-// on an interrupt signal.
+// NewServer listens for TCP connections on port 1337 and handles cleaning
+// up on an interrupt signal.
 func NewServer() (*Server, error) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 

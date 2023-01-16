@@ -1,15 +1,13 @@
 package main
 
 import (
-	"errors"
-	"fmt"
+	"bufio"
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 
-	"07-line-reversal/server"
+	"07-line-reversal/server/lrcp"
 )
 
 // version is replaced at compile time using -X flag.
@@ -20,52 +18,41 @@ type Connection struct {
 }
 
 func main() {
-	sessionToConnection := make(map[int32]*Connection)
-
-	server, err := server.NewUDPServer()
+	server, err := lrcp.NewServer()
 	if err != nil {
 		log.Fatal(err)
 	}
 	_, debug := os.LookupEnv("DEBUG")
 	log.Println("running version", version, "( debug =", debug, ")")
 
-	for packet := range server.Packets() {
-		request := string(packet.Data)
-		if debug {
-			request = strings.TrimSpace(request)
-		}
-		log.Println("request:", request)
-
-		parts, err := parseLRCP(request)
-		if err != nil {
-			continue
-		}
-		fmt.Println(parts)
-
-		if parts[0] == "connect" {
-			// get session id from request
-			sessionId, _ := strconv.Atoi(parts[1])
-
-			// get or create connection
-			_, ok := sessionToConnection[int32(sessionId)]
-			if !ok {
-				fmt.Println("not okay!")
-				sessionToConnection[int32(sessionId)] = &Connection{
-					addr: packet.Addr,
+	for conn := range server.Connections() {
+		server.Handle(conn, func(conn *lrcp.Conn) {
+			proxy(bufio.NewReader(conn), bufio.NewWriter(conn), func(in string) string {
+				reversed := make([]rune, len(in))
+				for i, r := range strings.TrimSuffix(in, "\n") {
+					reversed[len(reversed)-2-i] = r
 				}
-			} else {
-				fmt.Println("not not okay!")
-			}
-		}
+				reversed[len(reversed)-1] = '\n'
+				return string(reversed)
+			})
+		})
 	}
 }
 
-// parseLRCP parses a LRCP packet into its parts
-func parseLRCP(data string) ([]string, error) {
-	if !strings.HasPrefix(data, "/") || !strings.HasSuffix(data, "/") {
-		return nil, errors.New("invalid packet format")
+// proxy will read from reader, transform the message using mapper, then write
+// to writer. This function runs until either read or write operation fails.
+func proxy(reader *bufio.Reader, writer *bufio.Writer, mapper func(string) string) {
+	for {
+		msg, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+		msg = mapper(msg)
+		if _, err = writer.WriteString(msg); err != nil {
+			return
+		}
+		if err = writer.Flush(); err != nil {
+			return
+		}
 	}
-	data = strings.TrimPrefix(strings.TrimSuffix(data, "/"), "/")
-	parts := strings.SplitN(data, "/", 4)
-	return parts, nil
 }
