@@ -13,17 +13,23 @@ import (
 )
 
 type (
+	transport interface {
+		Packets() <-chan udp.Packet
+		WriteTo([]byte, net.Addr) error
+	}
+
 	Server struct {
-		server  *udp.Server
+		server  transport
 		workers sync.WaitGroup
 		conns   chan *Conn
 	}
 	Conn struct {
 		bufio.Reader
 		bufio.Writer
-		id     uint32
-		addr   net.Addr
-		server *udp.Server
+		id        uint32
+		addr      net.Addr
+		server    transport
+		readCount int
 	}
 )
 
@@ -33,8 +39,12 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
+	return NewServerTransport(udpServer)
+}
+
+func NewServerTransport(t transport) (*Server, error) {
 	server := &Server{
-		server: udpServer,
+		server: t,
 		conns:  make(chan *Conn),
 	}
 
@@ -79,6 +89,7 @@ func (s *Server) listen() {
 		switch msg := msg.(type) {
 		case connectMsg:
 			conn.connect(packet.Addr, msg)
+			s.conns <- conn
 		case dataMsg:
 			conn.data(msg)
 		case ackMsg:
@@ -105,11 +116,24 @@ func (c *Conn) connect(addr net.Addr, msg connectMsg) {
 }
 
 func (c *Conn) data(msg dataMsg) {
+	// If the session is not open: send close and stop.
 	if !c.Open() {
 		c.send("close")
 		return
 	}
-	panic("todo")
+
+	// If we received any new data, add it to the buffer.
+	// 1. First check we have some overlap in the position we received.
+	// 2. Then check to make sure the amount of data we received is more than
+	//    our current read position.
+	if int(msg.pos) <= c.readCount && int(msg.pos)+len(msg.data) > c.readCount {
+		newData := msg.data[c.readCount-int(msg.pos):]
+		c.readCount += len(newData)
+		// TODO: send data on bufio.Reader
+	}
+
+	// ACK with how much data we've read.
+	c.send("ack", c.readCount)
 }
 
 func (c *Conn) ack(msg ackMsg) {
