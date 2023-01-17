@@ -109,6 +109,7 @@ func (c *Conn) data(msg dataMsg) {
 		c.send("close")
 		return
 	}
+	panic("todo")
 }
 
 func (c *Conn) ack(msg ackMsg) {
@@ -133,9 +134,4 @@ func (c *Conn) send(cmd string, args ...any) {
 
 func (c *Conn) Open() bool {
 	return c.addr != nil
-}
-
-func escape(s string) string {
-	replacer := strings.NewReplacer("/", "\\/", "\\", "\\\\")
-	return replacer.Replace(s)
 }

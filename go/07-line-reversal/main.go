@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"log"
-	"net"
 	"os"
 	"strings"
 
@@ -12,10 +11,6 @@ import (
 
 // version is replaced at compile time using -X flag.
 var version = "dev"
-
-type Connection struct {
-	addr net.Addr
-}
 
 func main() {
 	server, err := lrcp.NewServer()
