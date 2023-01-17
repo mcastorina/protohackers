@@ -2,6 +2,8 @@ package lrcp
 
 import (
 	"07-line-reversal/server/udp"
+	"bufio"
+	"io"
 
 	"net"
 	"strings"
@@ -89,4 +91,45 @@ func TestTransport(t *testing.T) {
 	transport.send("/data/123456/0/foobar/")
 	assert.Equal(t, "/close/123456/", transport.wbuf.String())
 	transport.wbuf.Reset()
+}
+
+func TestConnRead(t *testing.T) {
+	transport := testTransport{
+		ch:              make(chan udp.Packet),
+		waitForResponse: make(chan struct{}, 5),
+	}
+	server, err := NewServerTransport(&transport)
+	assert.NilError(t, err)
+
+	// Connect.
+	transport.send("/connect/123456/")
+	assert.Equal(t, "/ack/123456/0/", transport.wbuf.String())
+
+	conn := <-server.Connections()
+	assert.Equal(t, true, conn.Open())
+	reader := bufio.NewReader(conn)
+	readLine := func() string {
+		s, err := reader.ReadString('\n')
+		assert.NilError(t, err)
+		return s
+	}
+
+	// Send initial data.
+	transport.send("/data/123456/0/foobar\n/")
+	assert.Equal(t, "foobar\n", readLine())
+
+	// Send data accross multiple packets.
+	transport.send("/data/123456/7/hello /")
+	transport.send("/data/123456/13/world\n/")
+	transport.send("/data/123456/19/extra bits\n/")
+	assert.Equal(t, "hello world\n", readLine())
+
+	// Close the connection.
+	conn.Close()
+	assert.Equal(t, false, conn.Open())
+
+	// Reading should result in 'extra bits' followed by EOF.
+	assert.Equal(t, "extra bits\n", readLine())
+	_, err = reader.ReadString('\n')
+	assert.Equal(t, io.EOF, err)
 }

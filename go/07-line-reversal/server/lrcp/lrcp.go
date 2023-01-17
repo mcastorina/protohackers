@@ -1,7 +1,9 @@
 package lrcp
 
 import (
-	"bufio"
+	"07-line-reversal/server/udp"
+	"errors"
+
 	"fmt"
 	"log"
 	"net"
@@ -9,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"07-line-reversal/server/udp"
+	"github.com/acomagu/bufpipe"
 )
 
 type (
@@ -24,8 +26,9 @@ type (
 		conns   chan *Conn
 	}
 	Conn struct {
-		bufio.Reader
-		bufio.Writer
+		// Buffered pipe transport -> application layer.
+		appRead   *bufpipe.PipeReader
+		appWrite  *bufpipe.PipeWriter
 		id        uint32
 		addr      net.Addr
 		server    transport
@@ -82,7 +85,7 @@ func (s *Server) listen() {
 		// Create connection if it doesn't exist.
 		id := msg.SessionID()
 		if _, ok := conns[id]; !ok {
-			conns[id] = &Conn{id: id, server: s.server}
+			conns[id] = s.newConn(id)
 		}
 		conn := conns[id]
 
@@ -101,12 +104,24 @@ func (s *Server) listen() {
 	}
 }
 
+func (s *Server) newConn(id uint32) *Conn {
+	r, w := bufpipe.New(nil)
+	return &Conn{
+		id:       id,
+		server:   s.server,
+		appRead:  r,
+		appWrite: w,
+	}
+}
+
 func (c *Conn) Close() error {
 	if !c.Open() {
 		return nil
 	}
 	c.send("close")
 	c.addr = nil
+	_ = c.appRead.Close()
+	_ = c.appWrite.Close()
 	return nil
 }
 
@@ -128,8 +143,11 @@ func (c *Conn) data(msg dataMsg) {
 	//    our current read position.
 	if int(msg.pos) <= c.readCount && int(msg.pos)+len(msg.data) > c.readCount {
 		newData := msg.data[c.readCount-int(msg.pos):]
-		c.readCount += len(newData)
-		// TODO: send data on bufio.Reader
+		n, err := c.appWrite.Write([]byte(newData))
+		if err != nil {
+			log.Printf("error writing internal buffer: %v\n", err)
+		}
+		c.readCount += n
 	}
 
 	// ACK with how much data we've read.
@@ -158,4 +176,15 @@ func (c *Conn) send(cmd string, args ...any) {
 
 func (c *Conn) Open() bool {
 	return c.addr != nil
+}
+
+func (c *Conn) Read(buffer []byte) (int, error) {
+	return c.appRead.Read(buffer)
+}
+
+func (c *Conn) Write(buffer []byte) (int, error) {
+	if !c.Open() {
+		return 0, errors.New("transport already closed")
+	}
+	panic("todo")
 }

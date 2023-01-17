@@ -2,7 +2,10 @@ module 07-line-reversal
 
 go 1.19
 
-require gotest.tools v2.2.0+incompatible
+require (
+	github.com/acomagu/bufpipe v1.0.3
+	gotest.tools v2.2.0+incompatible
+)
 
 require (
 	github.com/google/go-cmp v0.5.9 // indirect
