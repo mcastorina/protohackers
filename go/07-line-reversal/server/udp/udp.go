@@ -108,3 +108,7 @@ func (s *Server) WriteTo(data []byte, addr net.Addr) error {
 	_, err := s.listener.WriteTo(data, addr)
 	return err
 }
+
+func (s *Server) LocalAddr() net.Addr {
+	return s.listener.LocalAddr()
+}

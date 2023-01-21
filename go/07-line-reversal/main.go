@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"log"
+	"net"
 	"os"
 	"strings"
 
@@ -21,7 +22,7 @@ func main() {
 	log.Println("running version", version, "( debug =", debug, ")")
 
 	for conn := range server.Connections() {
-		server.Handle(conn, func(conn *lrcp.Conn) {
+		server.Handle(conn, func(conn net.Conn) {
 			proxy(bufio.NewReader(conn), bufio.NewWriter(conn), func(in string) string {
 				reversed := make([]rune, len(in))
 				for i, r := range strings.TrimSuffix(in, "\n") {
