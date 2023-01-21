@@ -10,10 +10,10 @@ import (
 )
 
 type Server struct {
-	listener net.PacketConn
-	packets  chan Packet
-	cancel   context.CancelFunc
-	workers  sync.WaitGroup
+	net.PacketConn
+	packets chan Packet
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
 }
 
 func NewServer() (*Server, error) {
@@ -33,9 +33,9 @@ func NewServer() (*Server, error) {
 	log.Println("listening on udp :1337")
 
 	server := Server{
-		listener: listener,
-		packets:  make(chan Packet),
-		cancel:   cancel,
+		PacketConn: listener,
+		packets:    make(chan Packet),
+		cancel:     cancel,
 	}
 	server.workers.Add(1)
 
@@ -53,14 +53,14 @@ func (s *Server) Packets() <-chan Packet {
 }
 
 // Close shuts down the server.
-func (s *Server) Close() {
+func (s *Server) Close() error {
+	defer func() {
+		s.workers.Wait()
+		close(s.packets)
+	}()
 	log.Println("shutting down")
 	s.cancel()
-	if err := s.listener.Close(); err != nil {
-		log.Println(err)
-	}
-	s.workers.Wait()
-	close(s.packets)
+	return s.PacketConn.Close()
 }
 
 // Wait for the context to cancel, then call s.Close().
@@ -72,7 +72,7 @@ func (s *Server) closeServerOnCancel(ctx context.Context) {
 func (s *Server) readPackets(ctx context.Context) {
 	for {
 		buf := make([]byte, 1024)
-		n, addr, err := s.listener.ReadFrom(buf)
+		n, addr, err := s.PacketConn.ReadFrom(buf)
 		// Check if the context was canceled.
 		if ctx.Err() != nil {
 			return
@@ -100,15 +100,6 @@ type Packet struct {
 }
 
 func (p *Packet) Reply(data []byte) error {
-	_, err := p.server.listener.WriteTo(data, p.Addr)
+	_, err := p.server.PacketConn.WriteTo(data, p.Addr)
 	return err
-}
-
-func (s *Server) WriteTo(data []byte, addr net.Addr) error {
-	_, err := s.listener.WriteTo(data, addr)
-	return err
-}
-
-func (s *Server) LocalAddr() net.Addr {
-	return s.listener.LocalAddr()
 }

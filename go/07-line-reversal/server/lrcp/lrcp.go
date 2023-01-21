@@ -6,14 +6,12 @@ import (
 	"log"
 	"net"
 	"sync"
-
-	"github.com/acomagu/bufpipe"
 )
 
 type (
 	transport interface {
 		Packets() <-chan udp.Packet
-		WriteTo([]byte, net.Addr) error
+		WriteTo([]byte, net.Addr) (int, error)
 		LocalAddr() net.Addr
 	}
 
@@ -55,16 +53,18 @@ func (s *Server) Connections() <-chan net.Conn {
 func (s *Server) Handle(conn net.Conn, todo func(conn net.Conn)) {
 	s.workers.Add(1)
 	go func() {
+		log.Println("connection opened")
 		defer s.workers.Done()
 		todo(conn)
 		if err := conn.Close(); err != nil {
 			log.Println(err)
 		}
+		log.Println("connection closed")
 	}()
 }
 
 func (s *Server) listen() {
-	conns := make(map[uint32]*Conn)
+	chs := make(map[uint32]chan<- lrcpMsg)
 	for packet := range s.server.Packets() {
 		msg, err := parseMsg(packet.Data)
 		if err != nil {
@@ -72,33 +72,11 @@ func (s *Server) listen() {
 		}
 		// Create connection if it doesn't exist.
 		id := msg.SessionID()
-		if _, ok := conns[id]; !ok {
-			conns[id] = s.newConn(id)
+		if _, ok := chs[id]; !ok {
+			conn := NewConn(s.server, packet.Addr)
+			conn.OnConnect(func() { s.conns <- conn })
+			chs[id] = conn.MsgChan()
 		}
-		// TODO: Send messages over a channel to the Conn.
-		conn := conns[id]
-
-		switch msg := msg.(type) {
-		case connectMsg:
-			conn.connect(packet.Addr, msg)
-			s.conns <- conn
-		case dataMsg:
-			conn.data(msg)
-		case ackMsg:
-			conn.ack(msg)
-		case closeMsg:
-			_ = conn.Close()
-			delete(conns, id)
-		}
-	}
-}
-
-func (s *Server) newConn(id uint32) *Conn {
-	r, w := bufpipe.New(nil)
-	return &Conn{
-		id:       id,
-		server:   s.server,
-		appRead:  r,
-		appWrite: w,
+		chs[id] <- msg
 	}
 }

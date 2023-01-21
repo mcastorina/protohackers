@@ -24,14 +24,13 @@ type (
 func (testAddr) Network() string { return "test" }
 func (testAddr) String() string  { return "test" }
 
-func (t *testTransport) Packets() <-chan udp.Packet {
-	return t.ch
-}
-func (t *testTransport) WriteTo(data []byte, _ net.Addr) error {
-	_, err := t.wbuf.Write(data)
+func (t *testTransport) Packets() <-chan udp.Packet { return t.ch }
+func (t *testTransport) WriteTo(data []byte, _ net.Addr) (int, error) {
+	n, err := t.wbuf.Write(data)
 	t.waitForResponse <- struct{}{}
-	return err
+	return n, err
 }
+func (t *testTransport) LocalAddr() net.Addr { return testAddr{} }
 func (t *testTransport) send(msg string) {
 	t.ch <- udp.Packet{
 		Data: []byte(msg),
@@ -53,7 +52,7 @@ func TestTransport(t *testing.T) {
 	assert.Equal(t, "/ack/123456/0/", transport.wbuf.String())
 	transport.wbuf.Reset()
 
-	conn := <-server.Connections()
+	conn := (<-server.Connections()).(*Conn)
 	assert.Equal(t, true, conn.Open())
 
 	// Send some data that we shouldn't do anything with.
@@ -105,7 +104,7 @@ func TestConnRead(t *testing.T) {
 	transport.send("/connect/123456/")
 	assert.Equal(t, "/ack/123456/0/", transport.wbuf.String())
 
-	conn := <-server.Connections()
+	conn := (<-server.Connections()).(*Conn)
 	assert.Equal(t, true, conn.Open())
 	reader := bufio.NewReader(conn)
 	readLine := func() string {
