@@ -3,9 +3,17 @@ package lrcp
 import (
 	"bytes"
 	"errors"
+	"log"
+	"os"
 	"strconv"
 	"strings"
 )
+
+var debug bool
+
+func init() {
+	_, debug = os.LookupEnv("DEBUG")
+}
 
 type (
 	lrcpMsg interface {
@@ -22,14 +30,19 @@ type (
 	}
 	ackMsg struct {
 		sessionID uint32
-		length    uint32
+		pos       uint32
 	}
 	closeMsg struct {
 		sessionID uint32
 	}
 )
 
-func parseMsg(data []byte) (lrcpMsg, error) {
+func parseMsg(data []byte) (m lrcpMsg, _ error) {
+	if debug {
+		data = bytes.TrimSpace(data)
+		data = bytes.ReplaceAll(data, []byte("\\n"), []byte("\n"))
+		defer func() { log.Println("received packet", m) }()
+	}
 	invalidMsg := errors.New("invalid message format")
 	if len(data) < 2 ||
 		!bytes.HasPrefix(data, []byte("/")) ||
@@ -72,11 +85,11 @@ func parseMsg(data []byte) (lrcpMsg, error) {
 		if len(parts) != 3 {
 			return nil, invalidMsg
 		}
-		length, err := strconv.Atoi(parts[2])
+		pos, err := strconv.Atoi(parts[2])
 		if err != nil {
 			return nil, invalidMsg
 		}
-		return ackMsg{sessionID: id, length: uint32(length)}, nil
+		return ackMsg{sessionID: id, pos: uint32(pos)}, nil
 	case "close":
 		if len(parts) != 2 {
 			return nil, invalidMsg

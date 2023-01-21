@@ -2,7 +2,10 @@ package lrcp
 
 import (
 	"07-line-reversal/server/udp"
+	"bytes"
 	"errors"
+	"sync/atomic"
+	"time"
 
 	"fmt"
 	"log"
@@ -29,10 +32,12 @@ type (
 		// Buffered pipe transport -> application layer.
 		appRead   *bufpipe.PipeReader
 		appWrite  *bufpipe.PipeWriter
+		appData   bytes.Buffer
 		id        uint32
 		addr      net.Addr
 		server    transport
-		readCount int
+		readCount uint32
+		ackCount  uint32
 	}
 )
 
@@ -87,6 +92,7 @@ func (s *Server) listen() {
 		if _, ok := conns[id]; !ok {
 			conns[id] = s.newConn(id)
 		}
+		// TODO: Send messages over a channel to the Conn.
 		conn := conns[id]
 
 		switch msg := msg.(type) {
@@ -141,13 +147,13 @@ func (c *Conn) data(msg dataMsg) {
 	// 1. First check we have some overlap in the position we received.
 	// 2. Then check to make sure the amount of data we received is more than
 	//    our current read position.
-	if int(msg.pos) <= c.readCount && int(msg.pos)+len(msg.data) > c.readCount {
-		newData := msg.data[c.readCount-int(msg.pos):]
+	if msg.pos <= c.readCount && msg.pos+uint32(len(msg.data)) > c.readCount {
+		newData := msg.data[c.readCount-msg.pos:]
 		n, err := c.appWrite.Write([]byte(newData))
 		if err != nil {
 			log.Printf("error writing internal buffer: %v\n", err)
 		}
-		c.readCount += n
+		c.readCount += uint32(n)
 	}
 
 	// ACK with how much data we've read.
@@ -155,7 +161,19 @@ func (c *Conn) data(msg dataMsg) {
 }
 
 func (c *Conn) ack(msg ackMsg) {
-	panic("todo")
+	if c.ackCount >= msg.pos {
+		return
+	}
+	// Check that the ack makes sense: the number of acknowledged bytes is not
+	// more than the bytes we have sent.
+	toDrop := int(msg.pos - c.ackCount)
+	if toDrop > c.appData.Len() {
+		return
+	}
+	// We have confirmation that these bytes have been received, so we can drop
+	// this data.
+	_ = c.appData.Next(int(msg.pos - c.ackCount))
+	atomic.StoreUint32(&c.ackCount, msg.pos)
 }
 
 func (c *Conn) send(cmd string, args ...any) {
@@ -186,5 +204,24 @@ func (c *Conn) Write(buffer []byte) (int, error) {
 	if !c.Open() {
 		return 0, errors.New("transport already closed")
 	}
-	panic("todo")
+	for i := 0; i < len(buffer); i += 512 {
+		end := i + 512
+		if end > len(buffer) {
+			end = len(buffer)
+		}
+		c.sendData(buffer[i:end])
+	}
+	return len(buffer), nil
+}
+
+func (c *Conn) sendData(data []byte) {
+	pos := c.ackCount + uint32(c.appData.Len())
+	msg := string(data)
+	go func() {
+		for c.Open() && c.ackCount < pos+uint32(len(data)) {
+			c.send("data", pos, msg)
+			time.Sleep(3 * time.Second)
+		}
+	}()
+	c.appData.Write(data)
 }

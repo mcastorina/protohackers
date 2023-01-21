@@ -81,7 +81,6 @@ func (s *Server) readPackets(ctx context.Context) {
 			log.Println(err)
 			continue
 		}
-		log.Println("received new packet")
 		select {
 		case s.packets <- Packet{
 			Data:   buf[:n],
