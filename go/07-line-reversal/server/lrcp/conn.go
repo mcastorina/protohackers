@@ -176,6 +176,7 @@ func (c *Conn) send(cmd string, args ...any) {
 		}
 	}
 	msg := fmt.Sprintf("/%s/", strings.Join(parts, "/"))
+	// TODO: return error
 	_, _ = c.server.WriteTo([]byte(msg), c.addr)
 }
 

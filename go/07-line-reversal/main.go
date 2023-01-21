@@ -33,6 +33,7 @@ func main() {
 			})
 		})
 	}
+	server.Wait()
 }
 
 // proxy will read from reader, transform the message using mapper, then write
