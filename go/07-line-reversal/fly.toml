@@ -1,0 +1,22 @@
+# fly.toml file generated for miccah-protohackers on 2022-11-01T22:01:51-05:00
+
+app = "miccah-protohackers"
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
+
+[build]
+  builder = "paketobuildpacks/builder:base"
+  buildpacks = ["gcr.io/paketo-buildpacks/go"]
+
+[[services]]
+  internal_port = 1337
+  processes = ["app"]
+  protocol = "udp"
+  [services.concurrency]
+    hard_limit = 50
+    soft_limit = 40
+    type = "connections"
+
+  [[services.ports]]
+    port = 1337
