@@ -76,6 +76,28 @@ func parseMsg(data []byte) (m lrcpMsg, _ error) {
 		if err != nil {
 			return nil, invalidMsg
 		}
+		// Check for unescaped '/' and '\' characters.
+		for i := 0; i < len(parts[3]); i++ {
+			ch := parts[3][i]
+			if ch == '\\' {
+				// Last character \ is invalid.
+				if i == len(parts[3])-1 {
+					return nil, invalidMsg
+				}
+				next := parts[3][i+1]
+				// Invalid character after \.
+				if next != '\\' && next != '/' {
+					return nil, invalidMsg
+				}
+				// Skip the escaped character.
+				i++
+				continue
+			}
+			// An unescaped /.
+			if ch == '/' {
+				return nil, invalidMsg
+			}
+		}
 		return dataMsg{
 			sessionID: id,
 			pos:       uint32(pos),

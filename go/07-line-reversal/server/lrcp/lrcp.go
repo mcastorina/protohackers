@@ -65,7 +65,7 @@ func (s *Server) Handle(conn net.Conn, todo func(conn net.Conn)) {
 
 func (s *Server) listen() {
 	defer close(s.conns)
-	chs := make(map[uint32]chan<- lrcpMsg)
+	chs := make(map[uint32]chan<- lrcpMsg, 32)
 	for packet := range s.server.Packets() {
 		msg, err := parseMsg(packet.Data)
 		if err != nil {

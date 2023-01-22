@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -92,6 +91,7 @@ func (c *Conn) handleMsgs() {
 }
 
 func (c *Conn) handleMsg(msg lrcpMsg) {
+	log.Printf("[%v] <-- %T %v\n", c.id, msg, msg)
 	switch msg := msg.(type) {
 	case connectMsg:
 		c.connect(msg)
@@ -100,6 +100,10 @@ func (c *Conn) handleMsg(msg lrcpMsg) {
 	case ackMsg:
 		c.ack(msg)
 	case closeMsg:
+		if c.state == waiting {
+			c.sendRaw("close", msg.SessionID())
+			return
+		}
 		_ = c.Close()
 	}
 }
@@ -128,7 +132,7 @@ func (c *Conn) connect(msg connectMsg) {
 
 func (c *Conn) data(msg dataMsg) {
 	if c.state != connected {
-		c.send("close")
+		c.sendRaw("close", msg.SessionID())
 		return
 	}
 	if msg.pos <= c.rxCount && msg.pos+uint32(len(msg.data)) > c.rxCount {
@@ -144,7 +148,7 @@ func (c *Conn) data(msg dataMsg) {
 
 func (c *Conn) ack(msg ackMsg) {
 	if c.state != connected {
-		c.send("close")
+		c.sendRaw("close", msg.SessionID())
 		return
 	}
 	// TODO: mutex?
@@ -164,19 +168,23 @@ func (c *Conn) ack(msg ackMsg) {
 }
 
 func (c *Conn) send(cmd string, args ...any) {
-	parts := make([]string, len(args)+2)
-	parts[0] = cmd
-	parts[1] = strconv.FormatInt(int64(c.id), 10)
+	args = append([]any{cmd, c.id}, args...)
+	c.sendRaw(args...)
+}
+
+func (c *Conn) sendRaw(args ...any) {
+	parts := make([]string, len(args))
 	for i, arg := range args {
 		switch arg := arg.(type) {
 		case string:
-			parts[i+2] = escape(arg)
+			parts[i] = escape(arg)
 		default:
-			parts[i+2] = fmt.Sprintf("%v", arg)
+			parts[i] = fmt.Sprintf("%v", arg)
 		}
 	}
 	msg := fmt.Sprintf("/%s/", strings.Join(parts, "/"))
 	// TODO: return error
+	log.Printf("[%v] --> %s\n", c.id, msg)
 	_, _ = c.server.WriteTo([]byte(msg), c.addr)
 }
 
@@ -184,6 +192,18 @@ func (c *Conn) retransmit(until func() bool, cmd string, args ...any) {
 	for !until() {
 		c.send(cmd, args...)
 		time.Sleep(3 * time.Second)
+	}
+}
+
+func (c *Conn) flush() {
+	offset := int(c.txCount)
+	buffer := c.tx.Bytes()
+	for i := 0; i < len(buffer); i += 512 {
+		end := i + 512
+		if end > len(buffer) {
+			end = len(buffer)
+		}
+		c.send("data", offset+i, string(buffer[i:end]))
 	}
 }
 
@@ -220,10 +240,19 @@ func (c *Conn) Write(buffer []byte) (int, error) {
 // Close closes the connection.
 // Any blocked Read or Write operations will be unblocked and return errors.
 func (c *Conn) Close() error {
+	if c.state == connected {
+		log.Printf("[%d] closing state: (%d rx, %d tx, %d ack, %d pending)\n",
+			c.id, c.rxCount, c.txCount, c.ackCount, c.tx.Len(),
+		)
+	}
 	c.state = closed
+	c.flush()
 	c.send("close")
 	c.rx.Reset()
 	c.tx.Reset()
+	c.txCount = 0
+	c.rxCount = 0
+	c.ackCount = 0
 	return nil
 }
 
