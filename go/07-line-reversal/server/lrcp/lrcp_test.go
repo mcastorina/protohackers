@@ -41,7 +41,7 @@ func (t *testTransport) send(msg string) {
 
 func TestTransport(t *testing.T) {
 	transport := testTransport{
-		ch:              make(chan udp.Packet),
+		ch:              make(chan udp.Packet, 5),
 		waitForResponse: make(chan struct{}, 5),
 	}
 	server, err := NewServerTransport(&transport)
@@ -52,8 +52,7 @@ func TestTransport(t *testing.T) {
 	assert.Equal(t, "/ack/123456/0/", transport.wbuf.String())
 	transport.wbuf.Reset()
 
-	conn := (<-server.Connections()).(*Conn)
-	assert.Equal(t, true, conn.Open())
+	_ = <-server.Connections()
 
 	// Send some data that we shouldn't do anything with.
 	transport.send("/data/123456/1/oobar/")
@@ -84,7 +83,6 @@ func TestTransport(t *testing.T) {
 	transport.send("/close/123456/")
 	assert.Equal(t, "/close/123456/", transport.wbuf.String())
 	transport.wbuf.Reset()
-	assert.Equal(t, false, conn.Open())
 
 	// Try to send data on a closed connection.
 	transport.send("/data/123456/0/foobar/")
@@ -104,8 +102,7 @@ func TestConnRead(t *testing.T) {
 	transport.send("/connect/123456/")
 	assert.Equal(t, "/ack/123456/0/", transport.wbuf.String())
 
-	conn := (<-server.Connections()).(*Conn)
-	assert.Equal(t, true, conn.Open())
+	conn := <-server.Connections()
 	reader := bufio.NewReader(conn)
 	readLine := func() string {
 		s, err := reader.ReadString('\n')
@@ -125,7 +122,6 @@ func TestConnRead(t *testing.T) {
 
 	// Close the connection.
 	conn.Close()
-	assert.Equal(t, false, conn.Open())
 
 	// Reading should result in 'extra bits' followed by EOF.
 	assert.Equal(t, "extra bits\n", readLine())

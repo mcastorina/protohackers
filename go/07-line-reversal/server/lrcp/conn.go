@@ -50,7 +50,7 @@ func (b *buffer) Write(buf []byte) (int, error) {
 	return b.w.Write(buf)
 }
 
-func (b *buffer) Reset() {
+func (b *buffer) Close() {
 	// TODO: mutex?
 	if b.r != nil {
 		_ = b.r.Close()
@@ -58,6 +58,10 @@ func (b *buffer) Reset() {
 	if b.w != nil {
 		_ = b.w.Close()
 	}
+}
+
+func (b *buffer) Reset() {
+	b.Close()
 	b.r, b.w = bufpipe.New(nil)
 }
 
@@ -122,6 +126,8 @@ func (c *Conn) connect(msg connectMsg) {
 		return
 	}
 	c.id = msg.SessionID()
+	c.rx.Reset()
+	c.tx.Reset()
 	c.rxCount = 0
 	c.ackCount = 0
 	c.state = connected
@@ -248,8 +254,7 @@ func (c *Conn) Close() error {
 	c.state = closed
 	c.flush()
 	c.send("close")
-	c.rx.Reset()
-	c.tx.Reset()
+	c.rx.Close()
 	c.txCount = 0
 	c.rxCount = 0
 	c.ackCount = 0

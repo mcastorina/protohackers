@@ -75,7 +75,7 @@ func (s *Server) listen() {
 		id := msg.SessionID()
 		if _, ok := chs[id]; !ok {
 			conn := NewConn(s.server, packet.Addr)
-			conn.OnConnect(func() { s.conns <- conn })
+			conn.OnConnect(func() { go func() { s.conns <- conn }() })
 			chs[id] = conn.MsgChan()
 		}
 		chs[id] <- msg
