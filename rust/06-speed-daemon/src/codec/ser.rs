@@ -1,22 +1,31 @@
 use serde::{ser, Serialize};
+use std::io::Write;
 
 use super::error::{Error, Result};
 
-pub struct Serializer {
-    // This vector starts empty and bytes are appended as values are serialized.
-    output: Vec<u8>,
+pub struct Serializer<W: Write> {
+    output: W,
 }
 
 pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>>
 where
     T: Serialize,
 {
-    let mut serializer = Serializer { output: Vec::new() };
-    value.serialize(&mut serializer)?;
-    Ok(serializer.output)
+    let mut writer = Vec::new();
+    to_writer(&mut writer, value)?;
+    Ok(writer)
 }
 
-impl<'a> ser::Serializer for &'a mut Serializer {
+pub fn to_writer<W: Write, T>(writer: W, value: &T) -> Result<()>
+where
+    T: Serialize,
+{
+    let mut serializer = Serializer { output: writer };
+    value.serialize(&mut serializer)?;
+    Ok(())
+}
+
+impl<'a, W: Write> ser::Serializer for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -49,17 +58,17 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
-        self.output.push(v);
+        self.output.write(&[v])?;
         Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> Result<()> {
-        self.output.extend(v.to_be_bytes());
+        self.output.write(&v.to_be_bytes())?;
         Ok(())
     }
 
     fn serialize_u32(self, v: u32) -> Result<()> {
-        self.output.extend(v.to_be_bytes());
+        self.output.write(&v.to_be_bytes())?;
         Ok(())
     }
 
@@ -88,8 +97,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         if !v.is_ascii() {
             return Err(Error::ExpectedAsciiCharacter);
         }
-        self.output.push(bytes.len() as u8);
-        self.output.extend(bytes);
+        self.output.write(&[bytes.len() as u8])?;
+        self.output.write(bytes)?;
         Ok(())
     }
 
@@ -97,8 +106,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         if v.len() > 255 {
             return Err(Error::ArrayTooLong);
         }
-        self.output.push(v.len() as u8);
-        self.output.extend(v);
+        self.output.write(&[v.len() as u8])?;
+        self.output.write(v)?;
         Ok(())
     }
 
@@ -154,7 +163,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         match len {
             Some(len) if len < 256 => {
-                self.output.push(len as u8);
+                self.output.write(&[len as u8])?;
                 Ok(self)
             }
             Some(_) => Err(Error::ArrayTooLong),
@@ -204,7 +213,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeSeq for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeSeq for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -222,7 +231,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTuple for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeTuple for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -238,7 +247,7 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeTupleStruct for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -254,7 +263,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeTupleVariant for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -270,7 +279,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeMap for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeMap for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -293,7 +302,7 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeStruct for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeStruct for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 
@@ -309,7 +318,7 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
+impl<'a, W: Write> ser::SerializeStructVariant for &'a mut Serializer<W> {
     type Ok = ();
     type Error = Error;
 

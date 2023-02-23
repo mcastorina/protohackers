@@ -1,20 +1,29 @@
+use std::io::Read;
 use std::str;
 
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, SeqAccess, Visitor};
 use serde::Deserialize;
 
 use super::error::{Error, Result};
 
-pub struct Deserializer<'de> {
-    // This string starts with the input data and characters are truncated off
-    // the beginning as data is parsed.
-    input: &'de [u8],
+pub struct Deserializer<R: Read> {
+    input: R,
 }
 
-impl<'de> Deserializer<'de> {
-    pub fn from_bytes(input: &'de [u8]) -> Self {
+impl<R: Read> Deserializer<R> {
+    pub fn from_reader(input: R) -> Self {
         Deserializer { input }
     }
+}
+
+// Deserialize from a reader.
+pub fn from_reader<'a, R: Read, T>(reader: R) -> Result<T>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = Deserializer::from_reader(reader);
+    let t = T::deserialize(&mut deserializer)?;
+    Ok(t)
 }
 
 // Deserialize from a slice of bytes.
@@ -22,7 +31,7 @@ pub fn from_bytes<'a, T>(s: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_bytes(s);
+    let mut deserializer = Deserializer::from_reader(s);
     let t = T::deserialize(&mut deserializer)?;
     if deserializer.input.is_empty() {
         Ok(t)
@@ -31,30 +40,23 @@ where
     }
 }
 
-impl<'de> Deserializer<'de> {
-    // Look at the first character in the input without consuming it.
-    fn peek_byte(&mut self) -> Result<u8> {
-        self.input.iter().next().ok_or(Error::Eof).cloned()
-    }
-
+impl<R: Read> Deserializer<R> {
     // Consume the first character in the input.
     fn next_byte(&mut self) -> Result<u8> {
-        let b = self.peek_byte()?;
-        self.input = &self.input[1..];
-        Ok(b)
+        let mut buf: [u8; 1] = Default::default();
+        self.input.read_exact(&mut buf)?;
+        Ok(buf[0])
     }
 
     // Parse a length prefix string of ASCII characters.
-    fn parse_ascii(&mut self) -> Result<&'de str> {
+    fn parse_ascii(&mut self) -> Result<String> {
         let len = self.next_byte()? as usize;
-        if self.input.len() < len {
-            return Err(Error::Eof);
-        }
-        let s = str::from_utf8(&self.input[..len]).map_err(|_| Error::ExpectedAsciiCharacter)?;
+        let mut v = vec![0; len];
+        self.input.read_exact(&mut v)?;
+        let s = String::from_utf8(v).map_err(|_| Error::ExpectedAsciiCharacter)?;
         if !s.is_ascii() {
             return Err(Error::ExpectedAsciiCharacter);
         }
-        self.input = &self.input[len..];
         Ok(s)
     }
 
@@ -65,26 +67,20 @@ impl<'de> Deserializer<'de> {
 
     // Parse a big-endian encoded u16.
     fn parse_u16(&mut self) -> Result<u16> {
-        if self.input.len() < 2 {
-            return Err(Error::Eof);
-        }
-        let bytes = &self.input[..2];
-        self.input = &self.input[2..];
-        Ok(u16::from_be_bytes(bytes.try_into().unwrap()))
+        let mut buf: [u8; 2] = Default::default();
+        self.input.read_exact(&mut buf)?;
+        Ok(u16::from_be_bytes(buf))
     }
 
     // Parse a big-endian encoded u32.
     fn parse_u32(&mut self) -> Result<u32> {
-        if self.input.len() < 4 {
-            return Err(Error::Eof);
-        }
-        let bytes = &self.input[..4];
-        self.input = &self.input[4..];
-        Ok(u32::from_be_bytes(bytes.try_into().unwrap()))
+        let mut buf: [u8; 4] = Default::default();
+        self.input.read_exact(&mut buf)?;
+        Ok(u32::from_be_bytes(buf))
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<R> {
     type Error = Error;
 
     fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
@@ -183,18 +179,18 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_char(s.bytes().next().unwrap() as char)
     }
 
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_str<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_ascii()?)
+        unimplemented!()
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        self.deserialize_str(visitor)
+        visitor.visit_string(self.parse_ascii()?)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
@@ -317,20 +313,20 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-struct LengthPrefix<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct LengthPrefix<'a, R: Read> {
+    de: &'a mut Deserializer<R>,
     count: usize,
 }
 
-impl<'a, 'de> LengthPrefix<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, count: usize) -> Self {
+impl<'a, R: Read> LengthPrefix<'a, R> {
+    fn new(de: &'a mut Deserializer<R>, count: usize) -> Self {
         LengthPrefix { de, count }
     }
 }
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de, 'a> SeqAccess<'de> for LengthPrefix<'a, 'de> {
+impl<'de, 'a, R: Read> SeqAccess<'de> for LengthPrefix<'a, R> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>

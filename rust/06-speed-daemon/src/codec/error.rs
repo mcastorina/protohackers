@@ -1,9 +1,9 @@
-use std;
 use std::fmt::{self, Display};
+use std::{error, io, result};
 
 use serde::{de, ser};
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = result::Result<T, Error>;
 
 // This is a bare-bones implementation. A real library would provide additional
 // information in its error type, for example the line and column at which the
@@ -28,6 +28,7 @@ pub enum Error {
     UnsupportedType,
     StringTooLong,
     ArrayTooLong,
+    IOError(io::Error),
 }
 
 impl ser::Error for Error {
@@ -46,6 +47,7 @@ impl Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
+            Error::IOError(err) => err.fmt(formatter),
             Error::Eof => formatter.write_str("unexpected end of input"),
             Error::ExpectedAsciiCharacter => formatter.write_str("expected an ASCII character"),
             Error::ExpectedSingleLengthString => {
@@ -63,4 +65,10 @@ impl Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl error::Error for Error {}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::IOError(err)
+    }
+}
