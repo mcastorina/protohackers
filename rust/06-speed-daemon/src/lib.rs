@@ -1,56 +1,58 @@
 mod codec;
+mod msg;
 
 use std::error::Error;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
-use std::iter::Peekable;
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::{io, slice};
 
 struct Common;
 struct Camera;
 struct Dispatcher;
 
 #[derive(Debug)]
-struct Client<R: Iterator<Item = Result<u8, io::Error>>, W: Write, Kind = Common> {
+struct Client<R: Read, W: Write, Kind = Common> {
     kind: std::marker::PhantomData<Kind>,
-    rbuf: Peekable<R>,
+    rbuf: BufReader<R>,
     wbuf: BufWriter<W>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum IncomingMessage {
-    IAmCamera { road: u16, mile: u16, limit: u16 },
-    IAmDispatcher { roads: Vec<u16> },
-    WantHeartbeat { interval: u32 },
-    Plate { plate: String, timestamp: u32 },
+    IAmCamera(msg::IAmCamera),
+    IAmDispatcher(msg::IAmDispatcher),
+    WantHeartbeat(msg::WantHeartbeat),
+    Plate(msg::Plate),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum OutgoingMessage {
     Heartbeat,
     Error(String),
-    Ticket {
-        plate: String,
-        road: u16,
-        mile1: u32,
-        timestamp1: u32,
-        mile2: u32,
-        timestamp2: u32,
-        speed: u16,
-    },
+    Ticket(msg::Ticket),
 }
 
-impl<R: Iterator<Item = Result<u8, io::Error>>, W: Write> Client<R, W> {
+impl<R: Read, W: Write> Client<R, W> {
     fn next_message(&mut self) -> Result<IncomingMessage, Box<dyn Error>> {
-        match self.rbuf.peek() {
-            _ => return Err("oh no".into()),
-        }
+        use IncomingMessage::*;
+
+        let mut id = 0;
+        self.rbuf.read_exact(slice::from_mut(&mut id))?;
+
+        Ok(match id {
+            0x20 => Plate(codec::from_reader(&mut self.rbuf)?),
+            0x40 => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
+            0x80 => IAmCamera(codec::from_reader(&mut self.rbuf)?),
+            0x81 => IAmDispatcher(codec::from_reader(&mut self.rbuf)?),
+            _ => return Err("unrecognized message".into()),
+        })
     }
 }
 
-impl<R: Read, W: Write> Client<io::Bytes<BufReader<R>>, W> {
+impl<R: Read, W: Write> Client<R, W> {
     fn new(r: R, w: W) -> Self {
         Self {
             kind: std::marker::PhantomData,
-            rbuf: BufReader::new(r).bytes().peekable(),
+            rbuf: BufReader::new(r),
             wbuf: BufWriter::new(w),
         }
     }
@@ -62,17 +64,45 @@ mod test {
 
     #[test]
     fn next_message() {
-        let mut output = Vec::new();
-        let mut client = Client::new("hello".as_bytes(), &mut output);
+        let plate = msg::Plate {
+            plate: "hello".to_string(),
+            timestamp: 1337,
+        };
+        let heartbeat = msg::WantHeartbeat { interval: 12345 };
+        let camera = msg::IAmCamera {
+            road: 0x4141,
+            mile: 0xcafe,
+            limit: 0xbabe,
+        };
+        let dispatcher = msg::IAmDispatcher {
+            roads: vec![0xf00, 0xba6, 0xba2],
+        };
+        let input = codec::to_bytes(&(
+            (0x20_u8, plate.clone()),
+            (0x40_u8, heartbeat.clone()),
+            (0x80_u8, camera.clone()),
+            (0x81_u8, dispatcher.clone()),
+        ))
+        .unwrap();
 
-        panic!("{:?}", client.next_message());
+        let mut output = Vec::new();
+        let mut client = Client::new(&input[..], &mut output);
+        assert_eq!(
+            client.next_message().unwrap(),
+            IncomingMessage::Plate(plate)
+        );
+        assert_eq!(
+            client.next_message().unwrap(),
+            IncomingMessage::WantHeartbeat(heartbeat)
+        );
+        assert_eq!(
+            client.next_message().unwrap(),
+            IncomingMessage::IAmCamera(camera)
+        );
+        assert_eq!(
+            client.next_message().unwrap(),
+            IncomingMessage::IAmDispatcher(dispatcher)
+        );
+        assert!(client.next_message().is_err());
     }
 }
-
-// 0x10: Error (Server->Client)
-// 0x21: Ticket (Server->Client)
-// 0x41: Heartbeat (Server->Client)
-// 0x20: Plate (Client->Server)
-// 0x40: WantHeartbeat (Client->Server)
-// 0x80: IAmCamera (Client->Server)
-// 0x81: IAmDispatcher (Client->Server)
