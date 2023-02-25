@@ -1,6 +1,7 @@
 mod codec;
 mod msg;
 
+use msg::Message;
 use std::error::Error;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::{io, slice};
@@ -16,32 +17,17 @@ struct Client<R: Read, W: Write, Kind = Common> {
     wbuf: BufWriter<W>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum IncomingMessage {
-    IAmCamera(msg::IAmCamera),
-    IAmDispatcher(msg::IAmDispatcher),
-    WantHeartbeat(msg::WantHeartbeat),
-    Plate(msg::Plate),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum OutgoingMessage {
-    Heartbeat,
-    Error(String),
-    Ticket(msg::Ticket),
-}
-
 impl<R: Read, W: Write> Client<R, W> {
-    fn next_message(&mut self) -> Result<IncomingMessage, Box<dyn Error>> {
-        use IncomingMessage::*;
+    fn next_message(&mut self) -> Result<msg::IncomingMessage, Box<dyn Error>> {
+        use msg::IncomingMessage::*;
 
         let mut id = 0;
         self.rbuf.read_exact(slice::from_mut(&mut id))?;
 
         Ok(match id {
-            0x40 => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
-            0x80 => IAmCamera(codec::from_reader(&mut self.rbuf)?),
-            0x81 => IAmDispatcher(codec::from_reader(&mut self.rbuf)?),
+            msg::WantHeartbeat::ID => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
+            msg::IAmCamera::ID => IAmCamera(codec::from_reader(&mut self.rbuf)?),
+            msg::IAmDispatcher::ID => IAmDispatcher(codec::from_reader(&mut self.rbuf)?),
             _ => return Err("unrecognized message".into()),
         })
     }
@@ -64,29 +50,29 @@ impl<R: Read, W: Write> Client<R, W> {
 }
 
 impl<R: Read, W: Write> Client<R, W, Camera> {
-    fn next_message(&mut self) -> Result<IncomingMessage, Box<dyn Error>> {
-        use IncomingMessage::*;
+    fn next_message(&mut self) -> Result<msg::IncomingMessage, Box<dyn Error>> {
+        use msg::IncomingMessage::*;
 
         let mut id = 0;
         self.rbuf.read_exact(slice::from_mut(&mut id))?;
 
         Ok(match id {
-            0x20 => Plate(codec::from_reader(&mut self.rbuf)?),
-            0x40 => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
+            msg::Plate::ID => Plate(codec::from_reader(&mut self.rbuf)?),
+            msg::WantHeartbeat::ID => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
             _ => return Err("unrecognized message".into()),
         })
     }
 }
 
 impl<R: Read, W: Write> Client<R, W, Dispatcher> {
-    fn next_message(&mut self) -> Result<IncomingMessage, Box<dyn Error>> {
-        use IncomingMessage::*;
+    fn next_message(&mut self) -> Result<msg::IncomingMessage, Box<dyn Error>> {
+        use msg::IncomingMessage::*;
 
         let mut id = 0;
         self.rbuf.read_exact(slice::from_mut(&mut id))?;
 
         Ok(match id {
-            0x40 => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
+            msg::WantHeartbeat::ID => WantHeartbeat(codec::from_reader(&mut self.rbuf)?),
             _ => return Err("unrecognized message".into()),
         })
     }
@@ -114,24 +100,24 @@ fn common_next_message() {
         roads: vec![0xf00, 0xba6, 0xba2],
     };
     let input = codec::to_bytes(&(
-        (0x40_u8, heartbeat.clone()),
-        (0x80_u8, camera.clone()),
-        (0x81_u8, dispatcher.clone()),
+        (msg::WantHeartbeat::ID, heartbeat.clone()),
+        (msg::IAmCamera::ID, camera.clone()),
+        (msg::IAmDispatcher::ID, dispatcher.clone()),
     ))
     .unwrap();
 
     let mut client = Client::new(&input[..], io::sink());
     assert_eq!(
         client.next_message().unwrap(),
-        IncomingMessage::WantHeartbeat(heartbeat)
+        msg::IncomingMessage::WantHeartbeat(heartbeat)
     );
     assert_eq!(
         client.next_message().unwrap(),
-        IncomingMessage::IAmCamera(camera)
+        msg::IncomingMessage::IAmCamera(camera)
     );
     assert_eq!(
         client.next_message().unwrap(),
-        IncomingMessage::IAmDispatcher(dispatcher)
+        msg::IncomingMessage::IAmDispatcher(dispatcher)
     );
     assert!(client.next_message().is_err());
 }
@@ -153,23 +139,23 @@ fn into_camera() {
         },
     ];
     let input = codec::to_bytes(&(
-        (0x20_u8, plates[0].clone()),
-        (0x20_u8, plates[1].clone()),
-        (0x20_u8, plates[2].clone()),
+        (msg::Plate::ID, plates[0].clone()),
+        (msg::Plate::ID, plates[1].clone()),
+        (msg::Plate::ID, plates[2].clone()),
     ))
     .unwrap();
 
     let mut client = Client::new(&input[..], io::sink()).into_camera();
     assert_eq!(
         client.next_message().unwrap(),
-        IncomingMessage::Plate(plates[0].clone())
+        msg::IncomingMessage::Plate(plates[0].clone())
     );
     assert_eq!(
         client.next_message().unwrap(),
-        IncomingMessage::Plate(plates[1].clone())
+        msg::IncomingMessage::Plate(plates[1].clone())
     );
     assert_eq!(
         client.next_message().unwrap(),
-        IncomingMessage::Plate(plates[2].clone())
+        msg::IncomingMessage::Plate(plates[2].clone())
     );
 }
