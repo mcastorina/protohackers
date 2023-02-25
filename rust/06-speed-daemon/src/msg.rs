@@ -1,5 +1,6 @@
 use super::codec;
 use std::io::{Read, Write};
+use std::time;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Error(String);
@@ -26,7 +27,16 @@ pub struct Plate {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct WantHeartbeat {
-    pub interval: u32,
+    pub interval: Decisecond,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct Decisecond(pub u32);
+
+impl From<Decisecond> for time::Duration {
+    fn from(d: Decisecond) -> Self {
+        time::Duration::from_millis(d.0 as u64 * 100)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]

@@ -1,10 +1,11 @@
 mod codec;
 mod msg;
 
-use msg::Message;
+use msg::{DeserializeMessage, Message, SerializeMessage};
 use std::error::Error;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::{io, slice};
+use std::sync::mpsc;
+use std::{io, slice, thread, time};
 
 struct Common;
 struct Camera;
@@ -15,6 +16,7 @@ struct Client<R: Read, W: Write, Kind = Common> {
     kind: std::marker::PhantomData<Kind>,
     rbuf: BufReader<R>,
     wbuf: BufWriter<W>,
+    heartbeat: Option<(time::Duration, time::Instant)>,
 }
 
 impl<R: Read, W: Write> Client<R, W> {
@@ -37,6 +39,7 @@ impl<R: Read, W: Write> Client<R, W> {
             kind: std::marker::PhantomData,
             rbuf: self.rbuf,
             wbuf: self.wbuf,
+            heartbeat: self.heartbeat,
         }
     }
 
@@ -45,6 +48,7 @@ impl<R: Read, W: Write> Client<R, W> {
             kind: std::marker::PhantomData,
             rbuf: self.rbuf,
             wbuf: self.wbuf,
+            heartbeat: self.heartbeat,
         }
     }
 }
@@ -84,13 +88,42 @@ impl<R: Read, W: Write> Client<R, W> {
             kind: std::marker::PhantomData,
             rbuf: BufReader::new(r),
             wbuf: BufWriter::new(w),
+            heartbeat: None,
         }
+    }
+}
+
+impl<R: Read, W: Write, Kind> Client<R, W, Kind> {
+    fn want_heartbeat(&mut self, heartbeat: msg::WantHeartbeat) -> Result<(), Box<dyn Error>> {
+        if self.heartbeat.is_some() {
+            return Err("heartbeat already requested".into());
+        }
+        let period = heartbeat.interval.into();
+        self.heartbeat = Some((period, time::Instant::now() - period));
+        Ok(())
+    }
+
+    // TODO: run_once can return another implementation of Kind
+    fn run_once(&mut self) -> Result<(), Box<dyn Error>> {
+        if let Some((period, last)) = self.heartbeat {
+            if last.elapsed() > period {
+                msg::Heartbeat.to_writer(&mut self.wbuf)?;
+                let mut next = last;
+                while next + period < time::Instant::now() {
+                    next += period;
+                }
+                self.heartbeat = Some((period, next));
+            }
+        }
+        Ok(())
     }
 }
 
 #[test]
 fn common_next_message() {
-    let heartbeat = msg::WantHeartbeat { interval: 12345 };
+    let heartbeat = msg::WantHeartbeat {
+        interval: msg::Decisecond(12345),
+    };
     let camera = msg::IAmCamera {
         road: 0x4141,
         mile: 0xcafe,
@@ -158,4 +191,23 @@ fn into_camera() {
         client.next_message().unwrap(),
         msg::IncomingMessage::Plate(plates[2].clone())
     );
+}
+
+#[test]
+fn test_heartbeat() {
+    let mut output = Vec::new();
+    let mut client = Client::new(&[][..], &mut output);
+    client
+        .want_heartbeat(msg::WantHeartbeat {
+            interval: msg::Decisecond(1),
+        })
+        .unwrap();
+    client.run_once();
+    client.run_once();
+    thread::sleep(time::Duration::from_millis(100));
+    client.run_once();
+    client.run_once();
+    drop(client);
+
+    assert_eq!(output, vec![msg::Heartbeat::ID; 2]);
 }
