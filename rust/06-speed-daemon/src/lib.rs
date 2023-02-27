@@ -7,12 +7,12 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::sync::mpsc;
 use std::{io, slice, thread, time};
 
-struct Common;
-struct Camera;
-struct Dispatcher;
+pub struct Common;
+pub struct Camera;
+pub struct Dispatcher;
 
 #[derive(Debug)]
-struct Client<R: Read, W: Write, Kind = Common> {
+pub struct Client<R: Read, W: Write, Kind = Common> {
     kind: std::marker::PhantomData<Kind>,
     rbuf: BufReader<R>,
     wbuf: BufWriter<W>,
@@ -36,27 +36,39 @@ impl<R: Read, W: Write> Client<R, W> {
         .transpose()
     }
 
-    // TODO: run_once can return another implementation of Kind
-    fn run_once(&mut self) -> Result<(), Box<dyn Error>> {
+    fn run_once(mut self) -> Result<SameOrSpecial<R, W>, Box<dyn Error>> {
+        use SameOrSpecial::*;
+
         self.send_heartbeat()?;
         let msg = self.next_message()?;
         if msg.is_none() {
             // Nothing to do.
-            return Ok(());
+            return Ok(Same(self));
         }
-        match msg.unwrap() {
+        Ok(match msg.unwrap() {
             msg::IncomingMessage::WantHeartbeat(want_heartbeat) => {
-                self.want_heartbeat(want_heartbeat)?
+                self.want_heartbeat(want_heartbeat)?;
+                Same(self)
             }
-            msg::IncomingMessage::IAmCamera(_) => {
-                todo!()
+            msg::IncomingMessage::IAmCamera(msg) => {
+                Special(CameraOrDispatcher::Camera(self.into_camera(), msg))
             }
-            msg::IncomingMessage::IAmDispatcher(_) => {
-                todo!()
+            msg::IncomingMessage::IAmDispatcher(msg) => {
+                Special(CameraOrDispatcher::Dispatcher(self.into_dispatcher(), msg))
             }
             _ => unreachable!(),
+        })
+    }
+
+    fn run_until_specialized(mut self) -> Result<CameraOrDispatcher<R, W>, Box<dyn Error>> {
+        use SameOrSpecial::*;
+
+        loop {
+            match self.run_once()? {
+                Same(same) => self = same,
+                Special(special) => return Ok(special),
+            }
         }
-        Ok(())
     }
 
     fn into_camera(self) -> Client<R, W, Camera> {
@@ -76,6 +88,16 @@ impl<R: Read, W: Write> Client<R, W> {
             heartbeat: self.heartbeat,
         }
     }
+}
+
+enum SameOrSpecial<R: Read, W: Write> {
+    Same(Client<R, W, Common>),
+    Special(CameraOrDispatcher<R, W>),
+}
+
+pub enum CameraOrDispatcher<R: Read, W: Write> {
+    Camera(Client<R, W, Camera>, msg::IAmCamera),
+    Dispatcher(Client<R, W, Dispatcher>, msg::IAmDispatcher),
 }
 
 impl<R: Read, W: Write> Client<R, W, Camera> {
@@ -153,6 +175,9 @@ impl<R: Read, W: Write, Kind> Client<R, W, Kind> {
         match self.rbuf.read_exact(slice::from_mut(&mut id)) {
             Ok(_) => Ok(Some(id)),
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            #[cfg(test)]
+            // Make Eof errors act as blocking for testing.
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
             Err(err) => Err(err.into()),
         }
     }
@@ -173,95 +198,130 @@ impl<R: Read, W: Write, Kind> Client<R, W, Kind> {
     }
 }
 
-#[test]
-fn common_next_message() {
-    let heartbeat = msg::WantHeartbeat {
-        interval: msg::Decisecond(12345),
-    };
-    let camera = msg::IAmCamera {
-        road: 0x4141,
-        mile: 0xcafe,
-        limit: 0xbabe,
-    };
-    let dispatcher = msg::IAmDispatcher {
-        roads: vec![0xf00, 0xba6, 0xba2],
-    };
-    let input = codec::to_bytes(&(
-        (msg::WantHeartbeat::ID, heartbeat.clone()),
-        (msg::IAmCamera::ID, camera.clone()),
-        (msg::IAmDispatcher::ID, dispatcher.clone()),
-    ))
-    .unwrap();
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    let mut client = Client::new(&input[..], io::sink());
-    assert_eq!(
-        client.next_message().unwrap().unwrap(),
-        msg::IncomingMessage::WantHeartbeat(heartbeat)
-    );
-    assert_eq!(
-        client.next_message().unwrap().unwrap(),
-        msg::IncomingMessage::IAmCamera(camera)
-    );
-    assert_eq!(
-        client.next_message().unwrap().unwrap(),
-        msg::IncomingMessage::IAmDispatcher(dispatcher)
-    );
-    assert!(client.next_message().is_err());
-}
-
-#[test]
-fn into_camera() {
-    let plates = vec![
-        msg::Plate {
-            plate: "hello".to_string(),
-            timestamp: 1337,
-        },
-        msg::Plate {
-            plate: "world".to_string(),
-            timestamp: 7331,
-        },
-        msg::Plate {
-            plate: "foo".to_string(),
-            timestamp: 12345,
-        },
-    ];
-    let input = codec::to_bytes(&(
-        (msg::Plate::ID, plates[0].clone()),
-        (msg::Plate::ID, plates[1].clone()),
-        (msg::Plate::ID, plates[2].clone()),
-    ))
-    .unwrap();
-
-    let mut client = Client::new(&input[..], io::sink()).into_camera();
-    assert_eq!(
-        client.next_message().unwrap().unwrap(),
-        msg::IncomingMessage::Plate(plates[0].clone())
-    );
-    assert_eq!(
-        client.next_message().unwrap().unwrap(),
-        msg::IncomingMessage::Plate(plates[1].clone())
-    );
-    assert_eq!(
-        client.next_message().unwrap().unwrap(),
-        msg::IncomingMessage::Plate(plates[2].clone())
-    );
-}
-
-#[test]
-fn test_heartbeat() {
-    let mut output = Vec::new();
-    let mut client = Client::new(io::empty(), &mut output);
-    client
-        .want_heartbeat(msg::WantHeartbeat {
-            interval: msg::Decisecond(1),
-        })
+    #[test]
+    fn common_next_message() {
+        let heartbeat = msg::WantHeartbeat {
+            interval: msg::Decisecond(12345),
+        };
+        let camera = msg::IAmCamera {
+            road: 0x4141,
+            mile: 0xcafe,
+            limit: 0xbabe,
+        };
+        let dispatcher = msg::IAmDispatcher {
+            roads: vec![0xf00, 0xba6, 0xba2],
+        };
+        let input = codec::to_bytes(&(
+            (msg::WantHeartbeat::ID, heartbeat.clone()),
+            (msg::IAmCamera::ID, camera.clone()),
+            (msg::IAmDispatcher::ID, dispatcher.clone()),
+        ))
         .unwrap();
-    client.run_once();
-    client.run_once();
-    thread::sleep(time::Duration::from_millis(100));
-    client.run_once();
-    client.run_once();
-    drop(client);
 
-    assert_eq!(output, vec![msg::Heartbeat::ID; 2]);
+        let mut client = Client::new(&input[..], io::sink());
+        assert_eq!(
+            client.next_message().unwrap().unwrap(),
+            msg::IncomingMessage::WantHeartbeat(heartbeat)
+        );
+        assert_eq!(
+            client.next_message().unwrap().unwrap(),
+            msg::IncomingMessage::IAmCamera(camera)
+        );
+        assert_eq!(
+            client.next_message().unwrap().unwrap(),
+            msg::IncomingMessage::IAmDispatcher(dispatcher)
+        );
+        assert!(client.next_message().unwrap().is_none());
+    }
+
+    #[test]
+    fn into_camera() {
+        let plates = vec![
+            msg::Plate {
+                plate: "hello".to_string(),
+                timestamp: 1337,
+            },
+            msg::Plate {
+                plate: "world".to_string(),
+                timestamp: 7331,
+            },
+            msg::Plate {
+                plate: "foo".to_string(),
+                timestamp: 12345,
+            },
+        ];
+        let input = codec::to_bytes(&(
+            (msg::Plate::ID, plates[0].clone()),
+            (msg::Plate::ID, plates[1].clone()),
+            (msg::Plate::ID, plates[2].clone()),
+        ))
+        .unwrap();
+
+        let mut client = Client::new(&input[..], io::sink()).into_camera();
+        assert_eq!(
+            client.next_message().unwrap().unwrap(),
+            msg::IncomingMessage::Plate(plates[0].clone())
+        );
+        assert_eq!(
+            client.next_message().unwrap().unwrap(),
+            msg::IncomingMessage::Plate(plates[1].clone())
+        );
+        assert_eq!(
+            client.next_message().unwrap().unwrap(),
+            msg::IncomingMessage::Plate(plates[2].clone())
+        );
+    }
+
+    #[test]
+    fn test_heartbeat() {
+        let mut output = Vec::new();
+        let mut client = Client::new(io::empty(), &mut output);
+        client
+            .want_heartbeat(msg::WantHeartbeat {
+                interval: msg::Decisecond(1),
+            })
+            .unwrap();
+        client = client.run_once().unwrap().same();
+        client = client.run_once().unwrap().same();
+        thread::sleep(time::Duration::from_millis(100));
+        client = client.run_once().unwrap().same();
+        client = client.run_once().unwrap().same();
+        drop(client);
+
+        assert_eq!(output, vec![msg::Heartbeat::ID; 2]);
+    }
+
+    impl<R: Read, W: Write> SameOrSpecial<R, W> {
+        fn same(self) -> Client<R, W, Common> {
+            match self {
+                Self::Same(same) => same,
+                _ => panic!("not same"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_run_specialized() {
+        let camera = msg::IAmCamera {
+            road: 0x4141,
+            mile: 0xcafe,
+            limit: 0xbabe,
+        };
+        let input = codec::to_bytes(&(
+            (msg::WantHeartbeat::ID, 12345_u32),
+            (msg::IAmCamera::ID, camera.clone()),
+        ))
+        .unwrap();
+
+        let client = Client::new(&input[..], io::sink());
+        let special_client = client.run_until_specialized().unwrap();
+        match special_client {
+            CameraOrDispatcher::Camera(_, c) if c == camera => (),
+            _ => panic!("expected a camera"),
+        }
+    }
 }
