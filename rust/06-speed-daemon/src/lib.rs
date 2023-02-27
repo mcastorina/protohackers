@@ -157,6 +157,7 @@ impl<R: Read, W: Write, Kind> Client<R, W, Kind> {
     fn send_heartbeat(&mut self) -> Result<(), Box<dyn Error>> {
         match self.heartbeat {
             None => (),
+            Some((period, _)) if period.as_millis() == 0 => (),
             Some((period, last)) if last.elapsed() < period => (),
             Some((period, last)) => {
                 msg::Heartbeat.to_writer(&mut self.wbuf)?;
@@ -323,5 +324,24 @@ mod test {
             CameraOrDispatcher::Camera(_, c) if c == camera => (),
             _ => panic!("expected a camera"),
         }
+    }
+
+    #[test]
+    fn test_zero_heartbeat() {
+        let mut output = Vec::new();
+        let mut client = Client::new(io::empty(), &mut output);
+        client
+            .want_heartbeat(msg::WantHeartbeat {
+                interval: msg::Decisecond(0),
+            })
+            .unwrap();
+        client = client.run_once().unwrap().same();
+        client = client.run_once().unwrap().same();
+        thread::sleep(time::Duration::from_millis(100));
+        client = client.run_once().unwrap().same();
+        client = client.run_once().unwrap().same();
+        drop(client);
+
+        assert!(output.is_empty());
     }
 }
